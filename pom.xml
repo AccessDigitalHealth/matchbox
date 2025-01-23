@@ -1,15 +1,21 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns="http://maven.apache.org/POM/4.0.0"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <!-- one-liner to take you to the cloud with settings form the application.yaml file: -->
-    <!-- 'mvn clean package com.google.cloud.tools:jib-maven-plugin:dockerBuild -Dimage=distroless-hapi && docker run -p 8080:8080 -e spring.batch.job.enabled=false distroless-hapi' -->
-    <!-- Note: HAPI projects use the "hapi-fhir" POM as their base to provide easy management. You do not need to use this in your own projects, so the "parent" tag and its contents below may be removed if you are using this file as a basis for your own project. -->
-    <!-- <parent><groupId>matchbox.</groupId><artifactId>matchbox</artifactId><version>6.0.0-PRE10-SNAPSHOT</version></parent> -->
+    <!-- 'mvn clean package com.google.cloud.tools:jib-maven-plugin:dockerBuild
+    -Dimage=distroless-hapi && docker run -p 8080:8080 -e spring.batch.job.enabled=false
+    distroless-hapi' -->
+    <!-- Note: HAPI projects use the "hapi-fhir" POM as their base to provide easy management. You
+    do not need to use this in your own projects, so the "parent" tag and its contents below may be
+    removed if you are using this file as a basis for your own project. -->
+    <!--
+    <parent><groupId>matchbox.</groupId><artifactId>matchbox</artifactId><version>6.0.0-PRE10-SNAPSHOT</version></parent> -->
 
     <groupId>health.matchbox</groupId>
     <artifactId>matchbox</artifactId>
-    <version>3.9.10</version>
+    <version>3.9.10.1-Infoway</version>
     <packaging>pom</packaging>
     <name>matchbox</name>
     <description>An open-source implementation to support testing and implementation of FHIR based solutions and map or
@@ -168,7 +174,7 @@
                         <groupId>commons-io</groupId>
                         <artifactId>commons-io</artifactId>
                     </exclusion>
-                </exclusions>    
+                </exclusions>
             </dependency>
             <dependency>
                 <groupId>ca.uhn.hapi.fhir</groupId>
@@ -191,7 +197,8 @@
                         <artifactId>junit</artifactId>
                     </exclusion>
                     <exclusion>
-                        <!-- Exclude that version, ANTLR is already included in the Spring dependencies -->
+                        <!-- Exclude that version, ANTLR is already included in the Spring
+                        dependencies -->
                         <groupId>org.antlr</groupId>
                         <artifactId>antlr4-runtime</artifactId>
                     </exclusion>
@@ -267,7 +274,7 @@
                 <groupId>com.graphql-java</groupId>
                 <artifactId>graphql-java</artifactId>
                 <version>21.5</version>
-            </dependency>    
+            </dependency>
             <dependency>
                 <groupId>ca.uhn.hapi.fhir</groupId>
                 <artifactId>hapi-fhir-jpaserver-mdm</artifactId>
@@ -305,7 +312,8 @@
                 <artifactId>jackson-annotations</artifactId>
                 <version>${jackson_version}</version>
             </dependency>
-            <!-- This dependency is used for the "FHIR Tester" web app overlay <dependency><groupId>ca.uhn.hapi.fhir</groupId><artifactId>hapi-fhir-testpage-overlay</artifactId><version>${hapi.fhir.version}</version><type>war</type><scope>provided</scope></dependency><dependency><groupId>ca.uhn.hapi.fhir</groupId><artifactId>hapi-fhir-testpage-overlay</artifactId><version>${hapi.fhir.version}</version><classifier>classes</classifier></dependency> -->
+            <!-- This dependency is used for the "FHIR Tester" web app overlay
+            <dependency><groupId>ca.uhn.hapi.fhir</groupId><artifactId>hapi-fhir-testpage-overlay</artifactId><version>${hapi.fhir.version}</version><type>war</type><scope>provided</scope></dependency><dependency><groupId>ca.uhn.hapi.fhir</groupId><artifactId>hapi-fhir-testpage-overlay</artifactId><version>${hapi.fhir.version}</version><classifier>classes</classifier></dependency> -->
             <dependency>
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-classic</artifactId>
@@ -316,8 +324,11 @@
                 <artifactId>log4j-to-slf4j</artifactId>
                 <version>${log4j_to_slf4j_version}</version>
             </dependency>
-            <!-- If you are using HAPI narrative generation, you will need to include Thymeleaf as well. Otherwise the following can be omitted. <dependency><groupId>org.thymeleaf</groupId><artifactId>thymeleaf</artifactId></dependency> -->
-            <!-- You may not need this if you are deploying to an application server which provides database connection pools itself. -->
+            <!-- If you are using HAPI narrative generation, you will need to include Thymeleaf as
+            well. Otherwise the following can be omitted.
+            <dependency><groupId>org.thymeleaf</groupId><artifactId>thymeleaf</artifactId></dependency> -->
+            <!-- You may not need this if you are deploying to an application server which provides
+            database connection pools itself. -->
             <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-dbcp2</artifactId>
@@ -334,7 +345,8 @@
                 <artifactId>commons-compress</artifactId>
                 <version>${commons_compress_version}</version>
             </dependency>
-            <!-- The following dependencies are only needed for automated unit tests, you do not necessarily need them to run the example. -->
+            <!-- The following dependencies are only needed for automated unit tests, you do not
+            necessarily need them to run the example. -->
             <dependency>
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers</artifactId>
@@ -464,7 +476,8 @@
                 <version>2.3.1</version>
             </dependency>
 
-            <!-- Upgrading Tomcat, the version we get from spring-boot-starter-tomcat is too old (almost a year) -->
+            <!-- Upgrading Tomcat, the version we get from spring-boot-starter-tomcat is too old
+            (almost a year) -->
             <dependency>
                 <groupId>org.apache.tomcat.embed</groupId>
                 <artifactId>tomcat-embed-core</artifactId>
@@ -482,13 +495,15 @@
             </dependency>
 
             <dependency>
-                <!-- Upgrading because of CVE-2023-52428 (https://security.snyk.io/vuln/SNYK-JAVA-COMNIMBUSDS-6247633) -->
+                <!-- Upgrading because of CVE-2023-52428
+                (https://security.snyk.io/vuln/SNYK-JAVA-COMNIMBUSDS-6247633) -->
                 <groupId>com.nimbusds</groupId>
                 <artifactId>nimbus-jose-jwt</artifactId>
                 <version>9.37.3</version>
             </dependency>
             <dependency>
-                <!-- Upgrading because of CVE-2023-4043 (https://nvd.nist.gov/vuln/detail/CVE-2023-4043) -->
+                <!-- Upgrading because of CVE-2023-4043
+                (https://nvd.nist.gov/vuln/detail/CVE-2023-4043) -->
                 <groupId>org.eclipse.parsson</groupId>
                 <artifactId>parsson</artifactId>
                 <version>1.0.4</version>
@@ -719,7 +734,8 @@
 
     <profiles>
         <!-- example of how to start the server using spring boot -->
-        <!-- mvn clean package spring-boot:repackage -Pboot && java -jar target/hapi-fhir-jpaserver.war -->
+        <!-- mvn clean package spring-boot:repackage -Pboot && java -jar
+        target/hapi-fhir-jpaserver.war -->
         <profile>
             <id>release</id>
             <build>
