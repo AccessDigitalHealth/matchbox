@@ -1,5 +1,13 @@
+2025/01/24 Release 3.9.11
+
+- remove introduced FML limitation to R5 [#329](https://github.com/ahdis/matchbox/issues/329), [#331](https://github.com/ahdis/matchbox/issues/331) thanks @mrunibe for PR's !
+- load testing example for matchbox with jmeter
+- memory leaks with precached implementation guides [#336](https://github.com/ahdis/matchbox/issues/336)
+- Update org.hl7.fhir.core to 6.5.5, additional validation parameters -check-references -resolution-context and -disableDefaultResourceFetcher [#334](https://github.com/ahdis/matchbox/issues/334) and [#337](https://github.com/ahdis/matchbox/issues/337)
+
 2025/01/13 Release 3.9.10
-- Performance improvement fml [#323](parsing https://github.com/ahdis/matchbox/issues/323)
+
+- Performance improvement fml parsing [#323](https://github.com/ahdis/matchbox/issues/323)
 - Update org.hl7.fhir.core to 6.5.4 and hapi-fhir to 7.6.1 
 - Update integration tests with correct url
 - make autoinstall new ig [#325](https://github.com/ahdis/matchbox/issues/325)
