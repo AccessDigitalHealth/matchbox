@@ -46,11 +46,4 @@ jobs:
         with:
           name: build-log
           path: build.log          
-      # Get Analysis on the Angular app as well. 
-      - name: SonarCloud Frontend Scan
-        uses: SonarSource/sonarcloud-github-action@v2
-        with:
-          projectBaseDir: ./matchbox-frontend
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
