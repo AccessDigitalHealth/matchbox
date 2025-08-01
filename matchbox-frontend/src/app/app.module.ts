@@ -13,6 +13,7 @@ import { IgsComponent } from './igs/igs.component';
 import { HIGHLIGHT_OPTIONS, HighlightModule } from 'ngx-highlightjs';
 import { TransformComponent } from './transform/transform.component';
 import { ValidateComponent } from './validate/validate.component';
+import { VerifyComponent } from './verify/verify.component';
 import { OperationResultComponent } from './operation-result/operation-result.component';
 import { UploadComponent } from './upload/upload.component';
 import { OAuthModule } from 'angular-oauth2-oidc';
@@ -55,6 +56,10 @@ const routes: Routes = [
     path: 'validate',
     component: ValidateComponent,
   },
+  {
+    path: 'verify',
+    component: VerifyComponent,
+  },
 ];
 
 export function createTranslateLoader(http: HttpClient) {
@@ -71,6 +76,7 @@ export function createTranslateLoader(http: HttpClient) {
     IgsComponent,
     TransformComponent,
     ValidateComponent,
+    VerifyComponent,
     OperationResultComponent,
     UploadComponent,
   ],
@@ -111,4 +117,4 @@ export function createTranslateLoader(http: HttpClient) {
     { provide: APP_BASE_HREF, useValue: (window as any).MATCHBOX_BASE_PATH },
   ],
 })
-export class AppModule {}
+export class AppModule { }
