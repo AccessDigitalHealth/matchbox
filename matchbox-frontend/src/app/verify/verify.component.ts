@@ -254,6 +254,7 @@ export class VerifyComponent implements AfterViewInit {
    * @param entry the entry to validate.
    */
   runValidation(entry: ValidationEntry) {
+    console.log(entry);
     if (this.selectedProfile != null) {
       if (!entry.profiles.includes(this.selectedProfile)) {
         entry.profiles.push(this.selectedProfile);
@@ -276,27 +277,34 @@ export class VerifyComponent implements AfterViewInit {
     }
 
     const searchParams = new URLSearchParams();
-    searchParams.set('profile', entry.selectedProfile);
-    if (entry.ig) {
-      searchParams.set('ig', entry.ig);
+    console.log(entry.ig);
+    if (!entry.ig) {
+      this.showErrorToast('No IG Selected', 'Please select an IG.');
     }
-
-    // Validation options
-    for (const param of entry.validationParameters) {
-      searchParams.set(param.name, param.value);
-    }
+    const packageId: string = entry.ig.split('#')[0];
+    const version: string = entry.ig.split('#')[1];
+    searchParams.set('packageId', packageId);
+    searchParams.set('version', version);
+    searchParams.set('mustSupportOnly', 'true');
+    console.log(searchParams.toString());
     entry.loading = true;
-    this.client
-      .operation({
-        name: 'validate?' + searchParams.toString(),
-        resourceType: undefined,
-        input: entry.resource,
-        options: {
-          headers: {
-            accept: 'application/fhir+json',
-            'content-type': entry.mimetype,
-          },
-        },
+
+    const url = `http://192.168.50.33:8081/api/v1/validation/verify-resource?${searchParams.toString()}`;
+
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        accept: 'application/fhir+json',
+        'Content-Type': 'application/json',
+        'x-api-key': 'FHIR-DATA-GEN',
+      },
+      body: entry.resource,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.json();
       })
       .then((response) => {
         // Got a response that should be an OperationOutcome
@@ -309,6 +317,7 @@ export class VerifyComponent implements AfterViewInit {
       .catch((error) => {
         // fhir-kit-client throws an error when return in not json
         entry.loading = false;
+        console.error(error);
         this.showErrorToast('Unexpected error', error.message);
         entry.result = OperationResult.fromMatchboxError(
           'Error while sending the validation request: ' + error.message
