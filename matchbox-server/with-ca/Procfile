@@ -1,0 +1,1 @@
+web: java -Dspring.config.additional-location=file:with-ca/application.yaml -jar matchbox.jar
