@@ -115,7 +115,10 @@ hapi:
         version: 1.5.0
       psca:
         name: ca.infoway.io.psca
-        version: 2.0.2-DFT-Ballot
+        version: 2.0.3-DFT-Ballot
+      psca-211-dft:
+        name: ca.infoway.io.psca
+        version: 2.1.1-DFT
       psab:
         name: ca.ab.fhir.psab
         version: 1.1.0
