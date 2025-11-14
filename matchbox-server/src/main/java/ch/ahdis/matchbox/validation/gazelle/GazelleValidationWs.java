@@ -14,6 +14,8 @@ import ch.ahdis.matchbox.validation.gazelle.models.metadata.Interface;
 import ch.ahdis.matchbox.validation.gazelle.models.metadata.RestBinding;
 import ch.ahdis.matchbox.validation.gazelle.models.metadata.Service;
 import ch.ahdis.matchbox.validation.gazelle.models.validation.*;
+
+import org.hl7.fhir.r5.model.StringType;
 import org.hl7.fhir.r5.model.StructureDefinition;
 import org.hl7.fhir.utilities.validation.ValidationMessage;
 import org.slf4j.Logger;
@@ -28,7 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-import static ch.ahdis.matchbox.util.MatchboxPackageInstallerImpl.SD_EXTENSION_TITLE_PREFIX;
+import static ch.ahdis.matchbox.packages.MatchboxJpaPackageCache.structureDefinitionIsValidatable;
 
 /**
  * The WebService for validation with the new Gazelle Validation API.
@@ -99,7 +101,7 @@ public class GazelleValidationWs {
 		// Filter the extensions, because they won't be validated directly
 		final List<NpmPackageVersionResourceEntity> entities =
 			this.structureDefinitionProvider.getPackageResources().stream()
-			.filter(packageVersionResource -> !packageVersionResource.getFilename().startsWith(SD_EXTENSION_TITLE_PREFIX))
+			.filter(packageVersionResource -> structureDefinitionIsValidatable(packageVersionResource.getFilename()))
 			.toList();
 
 		final var profiles = new ArrayList<ValidationProfile>(entities.size()*2);
@@ -184,6 +186,12 @@ public class GazelleValidationWs {
 		for (final var pkg : engine.getContext().getLoadedPackages()) {
 			report.addAdditionalMetadata(new Metadata().setName("package").setValue(pkg));
 		}
+		for (final String suppressedWarning : engine.getSuppressedWarnInfoPatterns()) {
+			report.addAdditionalMetadata(new Metadata().setName("suppressedWarning").setValue(suppressedWarning));
+		}		
+		for (final String suppressedError : engine.getSuppressedErrors()) {
+			report.addAdditionalMetadata(new Metadata().setName("suppressedError").setValue(suppressedError));
+		}		
 		report.addAdditionalMetadata(new Metadata().setName("profile").setValue(structDef.getUrl()));
 		report.addAdditionalMetadata(new Metadata().setName("profileVersion").setValue(structDef.getVersion()));
 		report.addAdditionalMetadata(new Metadata().setName("profileDate").setValue(structDef.getDateElement().getValueAsString()));
@@ -194,11 +202,13 @@ public class GazelleValidationWs {
 			final var metadata = new Metadata();
 			metadata.setName(field.getName());
 			try {
-				metadata.setValue(String.valueOf(field.get(cliContext)));
+				if (field.get(cliContext)!=null) {
+					metadata.setValue(String.valueOf(field.get(cliContext)));
+					report.addAdditionalMetadata(metadata);
+				}
 			} catch (final IllegalAccessException exception) {
 				continue;
 			}
-			report.addAdditionalMetadata(metadata);
 		}
 
 		// Response: add the validation items (requests) to the response
@@ -323,8 +333,9 @@ public class GazelleValidationWs {
 		// Description, with slice info if available
 		var description = new StringBuilder();
 		description.append(message.getMessage());
-		if (message.sliceText != null && message.sliceText.length > 0) {
-			final var slices = engine.filterSlicingMessages(message.sliceText);
+		
+		if (message.hasSliceInfo() && message.sliceHtml != null) {
+			var slices = engine.filterSlicingMessages(message.sliceHtml);
 			if (!slices.isEmpty()) {
 				description.append("<br/><br/>Slice information:<br/><ul>");
 				for (final var slice : slices) {

@@ -9,23 +9,22 @@ hapi:
         name: hl7.fhir.r5.core
         version: 5.0.0
         url: classpath:/hl7.fhir.r5.core.tgz
+      fhir_extensions:
+        name: hl7.fhir.uv.extensions.r5
+        version: 5.2.0
+        url: classpath:/hl7.fhir.uv.extensions.r5#5.2.0.tgz
       fhir_terminology:
         name: hl7.terminology.r5
-        version: 6.1.0
-        url: classpath:/hl7.terminology.r5#6.1.0.tgz
-      fhir_extensions:
-        name: hl7.fhir.uv.extensions
-        version: 1.0.0
-        url: classpath:/hl7.fhir.uv.extensions#1.0.0.tgz
+        version: 6.3.0
+        url: classpath:/hl7.terminology.r5#6.3.0.tgz
       cda:
         name: hl7.cda.uv.core
-        version: 2.0.0-sd-202406-matchbox-patch
-        url: classpath:/hl7.cda.uv.core#2.0.0-sd-202406-matchbox-patch.tgz
+        version: 2.0.1-sd-202510-matchbox-patch
+        url: classpath:/hl7.cda.uv.core#2.0.1-sd-202510-matchbox-patch.tgz
     staticLocation: file:/apps/
     fhir_version: R5
 matchbox:
   fhir:
     context:
-      fhirVersion: 5.0.0
       txServer: http://tx.fhir.org
       onlyOneEngine: true

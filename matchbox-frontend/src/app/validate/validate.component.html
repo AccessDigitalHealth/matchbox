@@ -1,6 +1,6 @@
 <div class="row">
   <div class="card-maps white-block">
-    <button (click)="toggleSettings()" mat-menu-item class="setting">
+    <button (click)="toggleSettings()" mat-menu-item class="setting" title="Edit validation parameters">
       <mat-icon>settings</mat-icon>
     </button>
     <h2>Validate FHIR Resource</h2>
@@ -64,16 +64,38 @@
           <mat-hint>A specific IG version may be specified.</mat-hint>
         </mat-form-field>
       </div>
+      <div class="buttons">
+        <span *ngIf="!profileLocked" class="profile-lock unlocked">
+          <mat-icon (click)="profileLocked = !profileLocked" title="Lock the profile">lock_open</mat-icon>
+          <span title="The profile will be updated automatically when validating a new resource">profile unlocked</span>
+        </span>
+        <span *ngIf="profileLocked" class="profile-lock locked">
+          <mat-icon (click)="profileLocked = !profileLocked" title="Unlock the profile">lock_close</mat-icon>
+          <span title="The profile won't be updated when validating a new resource">profile locked</span>
+        </span>
 
-      <button color="primary" mat-raised-button (click)="onValidationButtonClick()">Validate</button>
+        <button color="primary" mat-raised-button (click)="onValidationButtonClick()">Validate</button>
+        <button *ngIf="showAIAnalyzeButton" color="primary" mat-raised-button (click)="onAiAnalyzeButtonClick()">Analyze Operation Outcome with AI</button>
+      </div>
     </ng-container>
 
     <ng-container *ngIf="showSettings">
-      <div *ngFor="let setting of validatorSettings.values()" class="form-field-group">
-        <mat-form-field class="column50">
+      <div *ngFor="let setting of Array.from(validatorSettings.values()) | sortSettings" class="form-field-group">
+        <mat-form-field class="column50" *ngIf="setting.param.type === 'string' && setting.param.max === '1'">
           <mat-label>{{ setting.param.name }}</mat-label>
           <input [formControl]="setting.formControl" matInput/>
         </mat-form-field>
+        <mat-form-field class="column50" *ngIf="setting.param.type === 'string' && setting.param.max === '*'">
+          <mat-label>{{ setting.param.name }}</mat-label>
+          <textarea [formControl]="setting.formControl" 
+            matInput 
+            cdkTextareaAutosize 
+            cdkAutosizeMinRows="3"
+            cdkAutosizeMaxRows="10"></textarea>        
+        </mat-form-field>
+        <mat-checkbox *ngIf="setting.param.type === 'boolean'" [formControl]="setting.formControl">
+          {{ setting.param.name }}
+        </mat-checkbox>
       </div>
     </ng-container>
   </div>
@@ -98,7 +120,7 @@
           <at></at>
         </td>
         <td class="mat-cell">
-          {{ entry.selectedProfile }}<br/>
+          {{ entry.validationProfile }}<br/>
           {{ entry.ig }}
         </td>
         <td class="issues mat-cell">
@@ -137,7 +159,7 @@
       <dt>Filename</dt>
       <dd>{{ selectedEntry.filename }}</dd>
       <dt>Profile</dt>
-      <dd>{{ selectedEntry.selectedProfile }}</dd>
+      <dd>{{ selectedEntry.validationProfile }}</dd>
       <dt>IG</dt>
       <dd>{{ selectedEntry.ig }}</dd>
     </dl>

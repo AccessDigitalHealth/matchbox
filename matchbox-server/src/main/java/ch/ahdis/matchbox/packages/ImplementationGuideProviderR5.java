@@ -145,8 +145,6 @@ public class ImplementationGuideProviderR5 extends ImplementationGuideResourcePr
 				.addDependencyExclude("hl7.fhir.r4.core")
 				.addDependencyExclude("hl7.fhir.r4b.core")
 				.addDependencyExclude("hl7.fhir.r5.core")
-				.addDependencyExclude("hl7.terminology")
-				.addDependencyExclude("hl7.terminology.r5")
 				.addDependencyExclude("hl7.fhir.r5.examples");
 	}
 
@@ -446,17 +444,25 @@ public class ImplementationGuideProviderR5 extends ImplementationGuideResourcePr
 					.findAll(org.springframework.data.domain.Sort.by(Direction.ASC, "myPackageId", "myVersionId"));
 			List<ImplementationGuide> list = new ArrayList<ImplementationGuide>();
 
+			boolean onlyCurrent = false;
+			if (theSearchForTag != null && theSearchForTag.getValuesAsQueryTokens().stream()
+					.anyMatch(t -> t.getValuesAsQueryTokens().stream()
+							.anyMatch(v -> v.getValue().equals("current") && v.getSystem().equals("http://matchbox.health/fhir/CodeSystem/tag")))) {
+				onlyCurrent = true;
+			}
 			for (NpmPackageVersionEntity npmPackage : packages) {
+				if (onlyCurrent && !npmPackage.isCurrentVersion()) {
+					continue;
+				}
 				ImplementationGuide ig = new ImplementationGuide();
 				ig.setId(npmPackage.getPackageId() + "-" + npmPackage.getVersionId());
 				ig.setTitle(npmPackage.getDescription());
 				ig.setDate(npmPackage.getUpdatedTime());
 				ig.setPackageId(npmPackage.getPackageId());
-				if (npmPackage.isCurrentVersion()) {
-					ig.setVersion(npmPackage.getVersionId() + " (last)");
-				} else {
-					ig.setVersion(npmPackage.getVersionId());
-				}
+				if (npmPackage.isCurrentVersion() && !onlyCurrent) {
+					ig.getMeta().addTag("http://matchbox.health/fhir/CodeSystem/tag", "current", "Current version");
+				} 
+				ig.setVersion(npmPackage.getVersionId());
 				list.add(ig);
 			}
 
@@ -481,6 +487,9 @@ public class ImplementationGuideProviderR5 extends ImplementationGuideResourcePr
 				if (packages.isPresent()) {
 					NpmPackageVersionEntity npmPackage = packages.get();
 					ImplementationGuide ig = new ImplementationGuide();
+					if (npmPackage.isCurrentVersion()) {
+						ig.getMeta().addTag("http://matchbox.health/fhir/CodeSystem/tag", "current", "Current version");
+					} 
 					ig.setId(npmPackage.getPackageId() + "-" + npmPackage.getVersionId());
 					ig.setTitle(npmPackage.getDescription());
 					ig.setDate(npmPackage.getUpdatedTime());

@@ -1,7 +1,6 @@
 import { Component } from '@angular/core';
 import { FhirConfigService } from './fhirConfig.service';
 import { TranslateService } from '@ngx-translate/core';
-import packageJson from '../../package.json';
 import {HashUrlRedirectionService} from "./util/hash-url-redirection-service";
 
 @Component({
@@ -11,7 +10,7 @@ import {HashUrlRedirectionService} from "./util/hash-url-redirection-service";
     standalone: false
 })
 export class AppComponent {
-  public version: string = packageJson.version;
+  public version: string = (window as any).MATCHBOX_VERSION;
 
   constructor(readonly translateService: TranslateService,
               readonly fhirConfigService: FhirConfigService,
@@ -28,7 +27,7 @@ export class AppComponent {
     if (base === 'http://localhost:4200') {
       console.log('note: using local dev mag system for ' + location.origin);
       // You can also use /proxy/testahdisch
-      fhirConfigService.changeFhirMicroService('http://localhost:4200/proxy/localhost/matchboxv3/fhir');
+      fhirConfigService.changeFhirMicroService('http://localhost:8080/matchboxv3/fhir');
     } else {
       const url: string = (window as any).MATCHBOX_BASE_PATH + '/fhir';
       fhirConfigService.changeFhirMicroService(url);
