@@ -29,11 +29,6 @@
             <artifactId>postgresql</artifactId>
         </dependency>
 
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-        </dependency>
-
         <!-- This dependency includes the core HAPI-FHIR classes -->
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
