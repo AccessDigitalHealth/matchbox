@@ -22,6 +22,8 @@ import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { ToastrModule } from 'ngx-toastr';
 import { HashUrlRedirectionService } from './util/hash-url-redirection-service';
 import { APP_BASE_HREF } from '@angular/common';
+import { MarkdownModule } from 'ngx-markdown';
+import {SortSettingsPipe} from "./validate/order-settings.pipe";
 
 // The Angular routes
 // All paths defined here must be supported in matchbox-server's MatchboxStaticResourceConfig, otherwise a direct access
@@ -86,6 +88,8 @@ export function createTranslateLoader(http: HttpClient) {
     HighlightLineNumbers,
     BrowserAnimationsModule, // Required for toastr
     ToastrModule.forRoot(),
+    MarkdownModule.forRoot(),
+    SortSettingsPipe
   ],
   providers: [
     provideTranslateService({

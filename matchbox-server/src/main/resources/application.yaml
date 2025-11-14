@@ -29,6 +29,26 @@ spring:
   web:
     resources:
       static-locations: classpath:/static/browser/
+  ai:
+    mcp:
+      server:
+        enabled: false
+        name: matchbox-mcp
+        version: ${project.version}
+        # These 3 paths have been carefully crafted, change them at your own risk!
+        base-url: ../
+        sse-endpoint: mcp/sse
+        sse-message-endpoint: mcp/message
+        stdio: false
+        type: SYNC
+        tool-change-notification: true
+        resource-change-notification: false
+        prompt-change-notification: false
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
 server:
   servlet:
     context-path: /matchboxv3
@@ -55,12 +75,12 @@ hapi:
       #   url: classpath:/hl7.fhir.r4.core.tgz
       # fhir_extensions:
       #   name: hl7.fhir.uv.extensions.r4
-      #   version: 1.0.0
-      #   url: classpath:/hl7.fhir.uv.extensions.r4#1.0.0.tgz
+      #   version: 5.2.0
+      #   url: classpath:/hl7.fhir.uv.extensions.r4#5.2.0.tgz
       # fhir_terminology:
       #   name: hl7.terminology.r4
-      #   version: 6.1.0
-      #   url: classpath:/hl7.terminology.r4#6.1.0.tgz
+      #   version: 6.3.0
+      #   url: classpath:/hl7.terminology.r4#6.3.0.tgz
     #      ch-core:
     #        name: ch.fhir.ig.ch-core
     #        version: 4.0.0-ballot
@@ -73,7 +93,6 @@ hapi:
 matchbox:
   fhir:
     context:
-      fhirVersion: 4.0.1
       txServer: n/a
 #      xVersion: true
 #      onlyOneEngine: true

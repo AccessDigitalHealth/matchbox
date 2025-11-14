@@ -21,15 +21,14 @@ package ch.ahdis.matchbox.validation;
  */
 
 import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.jpa.dao.data.INpmPackageVersionDao;
 import ca.uhn.fhir.jpa.dao.data.INpmPackageVersionResourceDao;
 import ca.uhn.fhir.rest.annotation.Operation;
 import ca.uhn.fhir.rest.annotation.OperationParam;
 import ca.uhn.fhir.rest.api.EncodingEnum;
 import ca.uhn.fhir.util.StopWatch;
-import ca.uhn.fhir.validation.SingleValidationMessage;
 import ch.ahdis.matchbox.CliContext;
 import ch.ahdis.matchbox.util.MatchboxEngineSupport;
+import ch.ahdis.matchbox.validation.matchspark.LLMConnector;
 import ch.ahdis.matchbox.engine.MatchboxEngine;
 import ch.ahdis.matchbox.engine.cli.VersionUtil;
 import ch.ahdis.matchbox.engine.exception.MatchboxUnsupportedFhirVersionException;
@@ -47,14 +46,15 @@ import org.hl7.fhir.convertors.factory.VersionConvertorFactory_40_50;
 import org.hl7.fhir.convertors.factory.VersionConvertorFactory_43_50;
 import org.hl7.fhir.instance.model.api.IBase;
 import org.hl7.fhir.instance.model.api.IBaseResource;
+import org.hl7.fhir.r5.model.CodeableConcept;
 import org.hl7.fhir.r5.elementmodel.Manager.FhirFormat;
+import org.hl7.fhir.r5.extensions.ExtensionDefinitions;
 import org.hl7.fhir.r5.model.Duration;
 import org.hl7.fhir.r5.model.OperationOutcome;
 import org.hl7.fhir.r5.model.StringType;
 import org.hl7.fhir.r5.utils.EOperationOutcome;
 import org.hl7.fhir.r5.model.UriType;
 import org.hl7.fhir.r5.utils.OperationOutcomeUtilities;
-import org.hl7.fhir.r5.utils.ToolingExtensions;
 import org.hl7.fhir.utilities.validation.ValidationMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -77,7 +77,7 @@ import java.util.List;
 import static ch.ahdis.matchbox.util.MatchboxServerUtils.addExtension;
 
 /**
- * Operation $validate
+ * The HAPI provider of the operation $validate
  */
 public class ValidationProvider {
 
@@ -124,7 +124,6 @@ public class ValidationProvider {
 		@OperationParam(name = "return", type = IBase.class, min = 1, max = 1)})
 	public IBaseResource validate(final HttpServletRequest theRequest) {
 		log.debug("$validate");
-		final ArrayList<SingleValidationMessage> addedValidationMessages = new ArrayList<>();
 
 		final var sw = new StopWatch();
 		sw.startTask("Total");
@@ -138,18 +137,31 @@ public class ValidationProvider {
 		// check for each cliContextProperties if it is in the request parameter
 		for (final Field field : cliContextProperties) {
 			final String cliContextProperty = field.getName();
-			if (theRequest.getParameter(cliContextProperty) != null) {
-				try {
-					final String value = theRequest.getParameter(cliContextProperty);
-					// currently only handles boolean or String
-					if (field.getType() == boolean.class) {
-						BeanUtils.setProperty(cliContext, cliContextProperty, Boolean.parseBoolean(value));
-					} else {
-						BeanUtils.setProperty(cliContext, cliContextProperty, value);
+			if (field.getType() == String[].class) {
+				if (theRequest.getParameterValues(cliContextProperty) != null) {
+					try {
+						final String[] value = theRequest.getParameterValues(cliContextProperty);
+  						field.setAccessible(true);
+            			field.set(cliContext, value);
+					} catch (final IllegalAccessException e) {
+						log.error("error setting property %s to %s".formatted(cliContextProperty,
+																								theRequest.getParameter(cliContextProperty)));
 					}
-				} catch (final IllegalAccessException | InvocationTargetException e) {
-					log.error("error setting property " + cliContextProperty + " to " + theRequest.getParameter(
-						cliContextProperty));
+				}
+			} else {
+				if (theRequest.getParameter(cliContextProperty) != null) {
+					try {
+						final String value = theRequest.getParameter(cliContextProperty);
+						// currently only handles boolean or String
+						if (field.getType() == boolean.class || field.getType() == Boolean.class) {
+							BeanUtils.setProperty(cliContext, cliContextProperty, Boolean.parseBoolean(value));
+						} else {
+							BeanUtils.setProperty(cliContext, cliContextProperty, value);
+						}
+					} catch (final IllegalAccessException | InvocationTargetException e) {
+						log.error("error setting property %s to %s".formatted(cliContextProperty,
+																								theRequest.getParameter(cliContextProperty)));
+					}
 				}
 			}
 		}
@@ -157,11 +169,6 @@ public class ValidationProvider {
 		// Check if the IG should be auto-installed
 		if (!cliContext.isHttpReadOnly()) {
 			this.ensureIgIsInstalled(theRequest.getParameter("ig"), theRequest.getParameter("profile"));
-		}
-
-		if (theRequest.getParameter("extensions") != null) {
-			String extensions = theRequest.getParameter("extensions");
-			cliContext.setExtensions(new ArrayList<String>(Arrays.asList(extensions.split(","))));
 		}
 
 		if (theRequest.getParameter("profile") == null) {
@@ -196,7 +203,7 @@ public class ValidationProvider {
 		}
 		if (engine == null) {
 			return this.getOoForError(
-				"Matchbox engine for profile '%s' could not be created, is an an ig configured for matchbox?".formatted(
+				"Matchbox engine for profile '%s' could not be created, check the installed IGs".formatted(
 					profile));
 		}
 		int versionSeparator = profile.lastIndexOf('|');
@@ -205,8 +212,7 @@ public class ValidationProvider {
 		}
 		if (engine.getStructureDefinitionR5(profile) == null) {
 			return this.getOoForError(
-				"Engine configured, but validation for profile '%s' not found. ".formatted(
-					profile)+engine.toString());
+				"Engine configured, but validation for profile '%s' not found. %s".formatted(profile, engine));
 		}
 		if (!this.matchboxEngineSupport.isInitialized()) {
 			return this.getOoForError("Validation engine not initialized, please try again");
@@ -232,7 +238,46 @@ public class ValidationProvider {
 		long millis = sw.getMillis();
 		log.debug("Validation time: {}", sw);
 
-		return this.getOperationOutcome(sha3Hex, messages, profile, engine, millis, cliContext);
+		var oo = this.getOperationOutcome(sha3Hex, messages, profile, engine, millis, cliContext);
+
+		Boolean aiAnalyze = null;
+		// check if the request ai analyze parameter is set to true or false
+		if (theRequest.getParameter("analyzeOutcomeWithAI") != null) {
+			aiAnalyze = Boolean.parseBoolean(theRequest.getParameter("analyzeOutcomeWithAI"));
+		}
+
+		Boolean aiAnalyzeOnError = cliContext.getAnalyzeOutcomeWithAIOnError();
+
+		boolean hasError = false;
+		if (aiAnalyzeOnError != null && aiAnalyzeOnError) {
+			for (final ValidationMessage message : messages) {
+				if (message.getLevel() == ValidationMessage.IssueSeverity.ERROR || message.getLevel() == ValidationMessage.IssueSeverity.FATAL) {
+					hasError = true;
+					break;
+				}
+			}
+		}
+		if ((aiAnalyze != null && aiAnalyze) || (aiAnalyze == null && aiAnalyzeOnError != null && aiAnalyzeOnError && hasError)) {
+			try {
+				LLMConnector openAIConnector = LLMConnector.getConnector(cliContext);
+				String json = FhirContext.forR5().newJsonParser().setPrettyPrint(true).encodeResourceToString(oo);
+				String aiResult = openAIConnector.interpretWithMatchbox(contentString, json);
+				oo = this.addAIIssueToOperationOutcome(oo, aiResult);
+			} catch (Exception e) {
+				log.error("Error during AI analysis", e);
+				// add the error to the OperationOutcome, so the client still gets the validation result
+				oo = this.addExceptionToOperationOutcome(oo, e);
+			}
+		}
+
+		
+		return switch (this.myContext.getVersion().getVersion()) {
+			case R4 -> VersionConvertorFactory_40_50.convertResource((OperationOutcome) oo);
+			case R4B -> VersionConvertorFactory_43_50.convertResource((OperationOutcome) oo);
+			case R5 -> oo;
+			default -> throw new MatchboxUnsupportedFhirVersionException("ValidationProvider",
+																							 this.myContext.getVersion().getVersion());
+		};
 	}
 
 	private IBaseResource getOperationOutcome(final String id,
@@ -281,12 +326,18 @@ public class ValidationProvider {
 			for (final String pkg : engine.getContext().getLoadedPackages()) {
 				addExtension(ext, "package", new StringType(pkg));
 			}
+			for (final String suppressedWarning : engine.getSuppressedWarnInfoPatterns()) {
+				addExtension(ext, "suppressedWarning", new StringType(suppressedWarning));
+			}		
+			for (final String suppressedError : engine.getSuppressedErrors()) {
+				addExtension(ext, "suppressedError", new StringType(suppressedError));
+			}		
 		}
 
 		// Map the SingleValidationMessages to OperationOutcomeIssue
 		for (final ValidationMessage message : messages) {
 			if (message.getType() == null) {
-				// TODO: this did not happen with other core versions
+				// Note: this did not happen with previous core versions
 				message.setType(ValidationMessage.IssueType.UNKNOWN);
 			}
 			final var issue = OperationOutcomeUtilities.convertToIssue(message, oo);
@@ -297,8 +348,8 @@ public class ValidationProvider {
 			issue.setDetails(null);
 
 			// Add slice info to diagnostics
-			if (message.sliceText != null) {
-				List<String> sliceInfo = engine.filterSlicingMessages(message.sliceText);
+			if (message.hasSliceInfo() && message.sliceHtml != null) {
+				List<String> sliceInfo = engine.filterSlicingMessages(message.sliceHtml);
 				if (!sliceInfo.isEmpty()) {
 					final var newDiagnostics = new StringBuilder();
 					newDiagnostics.append(issue.getDiagnostics());
@@ -325,13 +376,7 @@ public class ValidationProvider {
 			issue.setDiagnostics("No fatal or error issues detected, the validation has passed");
 		}
 
-		return switch (this.myContext.getVersion().getVersion()) {
-			case R4 -> VersionConvertorFactory_40_50.convertResource(oo);
-			case R4B -> VersionConvertorFactory_43_50.convertResource(oo);
-			case R5 -> oo;
-			default -> throw new MatchboxUnsupportedFhirVersionException("ValidationProvider",
-																							 this.myContext.getVersion().getVersion());
-		};
+		return oo;
 	}
 
 	private IBaseResource getOoForError(final @NonNull String message) {
@@ -340,7 +385,7 @@ public class ValidationProvider {
 		issue.setSeverity(OperationOutcome.IssueSeverity.ERROR);
 		issue.setCode(OperationOutcome.IssueType.EXCEPTION);
 		issue.setDiagnostics(message);
-		issue.addExtension().setUrl(ToolingExtensions.EXT_ISSUE_SOURCE).setValue(new StringType("ValidationProvider"));
+		issue.addExtension().setUrl(ExtensionDefinitions.EXT_ISSUE_SOURCE).setValue(new StringType("ValidationProvider"));
 		return VersionConvertorFactory_40_50.convertResource(oo);
 	}
 
@@ -366,9 +411,9 @@ public class ValidationProvider {
 		final String canonical;
 		final String version;
 		if (parts.length == 2) {
-			final boolean found = new TransactionTemplate(this.myTxManager)
+			final Boolean found = new TransactionTemplate(this.myTxManager)
 				.execute(tx -> this.myPackageVersionResourceDao.getPackageVersionByCanonicalAndVersion(parts[0], parts[1]).isPresent());
-			if (found) {
+			if (found != null && found) {
 				// The profile was found in the database, the IG is installed
 				return;
 			}
@@ -415,16 +460,15 @@ public class ValidationProvider {
 			return;
 		}
 
-		if (versionsObject == null || versionsObject.getVersions() == null || versionsObject.getVersions().isEmpty() || versionsObject.getVersions().keySet().isEmpty()) {
+		if (versionsObject == null || versionsObject.getVersions() == null || versionsObject.getVersions().isEmpty()) {
 			return;
 		}
 
-		final var latestVersion = versionsObject.getVersions().keySet().toArray()[ versionsObject.getVersions().keySet().size()-1].toString();
-		try (final CloseableHttpClient httpclient = HttpClients.createDefault()) {
+		final var latestVersion = versionsObject.getVersions().keySet().toArray()[ versionsObject.getVersions().size()-1].toString();
+		try {
 			this.igProvider.installFromInternetRegistry(packages[0].getName(), latestVersion);
 		} catch (final Exception e) {
 			log.error("Error while installing IG version", e);
-			return;
 		}
 	}
 
@@ -458,7 +502,37 @@ public class ValidationProvider {
 			m.setCol(0);
 			m.setLine(0);
 			messages.add(m);
-		} 
+		}
 		return messages;
+	}
+
+	public IBaseResource addAIIssueToOperationOutcome(IBaseResource resource, String aiResponse) {
+		if (resource instanceof final OperationOutcome outcome) {
+			final var details = new CodeableConcept();
+			details.setText("AI Analyze of the Operation Outcome");
+
+			outcome.addIssue()
+				.setSeverity(OperationOutcome.IssueSeverity.INFORMATION)
+				.setCode(OperationOutcome.IssueType.INFORMATIONAL)
+				.setDiagnostics(aiResponse)
+				.setDetails(details)
+				.addExtension()
+					.setUrl("http://hl7.org/fhir/StructureDefinition/rendering-style")
+					.setValue(new StringType("markdown"));
+
+			return outcome;
+		}
+		throw new IllegalArgumentException("Provided resource is not an OperationOutcome.");
+	}
+
+	public IBaseResource addExceptionToOperationOutcome(IBaseResource resource, Exception e) {
+		if (resource instanceof final OperationOutcome outcome) {
+			outcome.addIssue()
+				.setSeverity(OperationOutcome.IssueSeverity.ERROR)
+				.setCode(OperationOutcome.IssueType.EXCEPTION)
+				.setDiagnostics(e.getLocalizedMessage());
+			return outcome;
+		}
+		throw new IllegalArgumentException("Provided resource is not an OperationOutcome.");
 	}
 }

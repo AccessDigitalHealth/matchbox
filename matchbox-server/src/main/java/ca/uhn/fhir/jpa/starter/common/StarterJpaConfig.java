@@ -12,9 +12,9 @@ import org.hl7.fhir.utilities.settings.ServerDetailsPOJO;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.http.HttpHeaders;
@@ -62,6 +62,7 @@ import ca.uhn.fhir.jpa.search.DatabaseBackedPagingProvider;
 import ca.uhn.fhir.jpa.search.IStaleSearchDeletingSvc;
 import ca.uhn.fhir.jpa.search.StaleSearchDeletingSvcImpl;
 import ca.uhn.fhir.jpa.starter.AppProperties;
+import ca.uhn.fhir.jpa.starter.annotations.OnCorsPresent;
 import ca.uhn.fhir.jpa.starter.util.EnvironmentHelper;
 import ca.uhn.fhir.jpa.util.ResourceCountCache;
 import ca.uhn.fhir.mdm.dao.IMdmLinkDao;
@@ -229,9 +230,8 @@ public class StarterJpaConfig {
 		return new MdmLinkDaoJpaImpl();
 	}
 
-
 	@Bean
-	@ConditionalOnProperty(prefix = "hapi.fhir", name = "cors")
+	@Conditional(OnCorsPresent.class)
 	public CorsInterceptor corsInterceptor(AppProperties appProperties) {
 		// Define your CORS configuration. This is an example
 		// showing a typical setup. You should customize this
@@ -262,11 +262,11 @@ public class StarterJpaConfig {
 
 	}
 
-	@Bean
-	public RestfulServer restfulServer(IFhirSystemDao<?, ?> fhirSystemDao, AppProperties appProperties, DaoRegistry daoRegistry, Optional<MdmProviderLoader> mdmProviderProvider, IJpaSystemProvider jpaSystemProvider, ResourceProviderFactory resourceProviderFactory, JpaStorageSettings daoConfig, ISearchParamRegistry searchParamRegistry, DatabaseBackedPagingProvider databaseBackedPagingProvider, LoggingInterceptor loggingInterceptor, Optional<TerminologyUploaderProvider> terminologyUploaderProvider, Optional<SubscriptionTriggeringProvider> subscriptionTriggeringProvider, Optional<CorsInterceptor> corsInterceptor, IInterceptorBroadcaster interceptorBroadcaster, Optional<BinaryAccessProvider> binaryAccessProvider, BinaryStorageInterceptor binaryStorageInterceptor, IValidatorModule validatorModule, Optional<GraphQLProvider> graphQLProvider, BulkDataExportProvider bulkDataExportProvider, BulkDataImportProvider bulkDataImportProvider, ValueSetOperationProvider theValueSetOperationProvider, ReindexProvider reindexProvider, PartitionManagementProvider partitionManagementProvider, Optional<RepositoryValidatingInterceptor> repositoryValidatingInterceptor, IPackageInstallerSvc packageInstallerSvc, ThreadSafeResourceDeleterSvc theThreadSafeResourceDeleterSvc) {
+	public MatchboxRestfulServer restfulServer(IFhirSystemDao<?, ?> fhirSystemDao, AppProperties appProperties,
+                                      DaoRegistry daoRegistry, Optional<MdmProviderLoader> mdmProviderProvider, IJpaSystemProvider jpaSystemProvider, ResourceProviderFactory resourceProviderFactory, JpaStorageSettings daoConfig, ISearchParamRegistry searchParamRegistry, DatabaseBackedPagingProvider databaseBackedPagingProvider, LoggingInterceptor loggingInterceptor, Optional<TerminologyUploaderProvider> terminologyUploaderProvider, Optional<SubscriptionTriggeringProvider> subscriptionTriggeringProvider, Optional<CorsInterceptor> corsInterceptor, IInterceptorBroadcaster interceptorBroadcaster, Optional<BinaryAccessProvider> binaryAccessProvider, BinaryStorageInterceptor binaryStorageInterceptor, IValidatorModule validatorModule, Optional<GraphQLProvider> graphQLProvider, BulkDataExportProvider bulkDataExportProvider, BulkDataImportProvider bulkDataImportProvider, ValueSetOperationProvider theValueSetOperationProvider, ReindexProvider reindexProvider, PartitionManagementProvider partitionManagementProvider, Optional<RepositoryValidatingInterceptor> repositoryValidatingInterceptor, IPackageInstallerSvc packageInstallerSvc, ThreadSafeResourceDeleterSvc theThreadSafeResourceDeleterSvc) {
 		// Modified by matchbox because we want the request to be mutable (for conversion)
 		// RestfulServer fhirServer = new RestfulServer(fhirSystemDao.getContext());
-		RestfulServer fhirServer = new MatchboxRestfulServer(fhirSystemDao.getContext());
+    final var fhirServer = new MatchboxRestfulServer(fhirSystemDao.getContext());
 
 
 // 		List<String> supportedResourceTypes = appProperties.getSupported_resource_types();

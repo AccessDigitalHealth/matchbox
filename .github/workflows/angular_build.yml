@@ -20,52 +20,26 @@ jobs:
         working-directory: ./matchbox-frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           # https://github.com/actions/setup-node
           node-version: 20
           cache: npm
           cache-dependency-path: matchbox-frontend/package-lock.json
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        # https://github.com/actions/setup-java#usage
-        with:
-          java-version: 21
-          distribution: adopt
-
-      - name: Set up Maven
-        uses: stCarolas/setup-maven@v5
-        with:
-          maven-version: 3.9.9
-
-      - name: Update the project version
-        shell: bash
-        run: |
-          cd ..
-          VERSION=`mvn help:evaluate -Dexpression=project.version -q -DforceStdout`
-          echo "The project version is ${VERSION}"
-          cd ./matchbox-frontend
-          npm --no-git-tag-version --allow-same-version=true version "$VERSION"
-
       - name: Install dependencies
-        run: npm install
+        # Use dependencies from the lock file, no unattended updates
+        run: npm ci
 
       - name: Build
-        run: npm run build
-
-      - name: Remove the old GUI
-        run: rm -rf ../matchbox-server/src/main/resources/static
-
-      - name: Move the new GUI
-        run: mv dist ../matchbox-server/src/main/resources/static
+        run: npm run build-matchbox
 
       - name: Commit
         if: success()
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v6.0.1
         with:
           commit_message: "server: rebuild the Angular GUI resources"
           file_pattern: "matchbox-server/src/main/resources/static"

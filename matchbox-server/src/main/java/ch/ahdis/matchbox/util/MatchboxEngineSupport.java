@@ -1,6 +1,7 @@
 package ch.ahdis.matchbox.util;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.*;
 
 import ch.ahdis.matchbox.CliContext;
@@ -8,19 +9,28 @@ import ch.ahdis.matchbox.EngineLoggingService;
 import ch.ahdis.matchbox.config.MatchboxFhirContextProperties;
 import ch.ahdis.matchbox.engine.exception.IgLoadException;
 import ch.ahdis.matchbox.engine.exception.MatchboxEngineCreationException;
+import ch.ahdis.matchbox.engine.exception.MatchboxUnsupportedFhirVersionException;
 import ch.ahdis.matchbox.engine.exception.TerminologyServerException;
 
 import ch.ahdis.matchbox.packages.IgLoaderFromJpaPackageCache;
+import ch.ahdis.matchbox.util.http.HttpRequestWrapper;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r5.conformance.R5ExtensionsLoader;
 import org.hl7.fhir.r5.terminologies.CodeSystemUtilities;
+import org.hl7.fhir.r5.terminologies.client.TerminologyClientContext;
 import org.hl7.fhir.r5.utils.validation.constants.ReferenceValidationPolicy;
 import org.hl7.fhir.utilities.FhirPublication;
-import org.hl7.fhir.validation.cli.services.StandAloneValidatorFetcher;
+import org.hl7.fhir.utilities.validation.ValidationOptions.R5BundleRelativeReferencePolicy;
+import org.hl7.fhir.validation.instance.advisor.BasePolicyAdvisorForFullValidation;
+import org.hl7.fhir.validation.service.DisabledValidationPolicyAdvisor;
+import org.hl7.fhir.validation.service.StandAloneValidatorFetcher;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Slice;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -49,8 +59,7 @@ public class MatchboxEngineSupport {
 
 	@Autowired
 	private DaoRegistry myDaoRegistry;
-  
-	
+
 	@Autowired
 	private INpmPackageVersionResourceDao myPackageVersionResourceDao;
 	
@@ -66,18 +75,33 @@ public class MatchboxEngineSupport {
 	@Autowired(required = false)
 	private IBinaryStorageSvc myBinaryStorageSvc;
 
-	@Autowired
 	private CliContext cliContext;
 
 	private final MatchboxFhirContextProperties matchboxFhirContextProperties;
 
-	public MatchboxEngineSupport(final MatchboxFhirContextProperties matchboxFhirContextProperties) {
+	private final FhirVersionEnum serverFhirVersion;
+
+	public MatchboxEngineSupport(final MatchboxFhirContextProperties matchboxFhirContextProperties,
+										  final CliContext cliContext,
+										  @Value("${hapi.fhir.fhir_version}") final FhirVersionEnum serverFhirVersion) {
 		this.sessionCache = new EngineSessionCache();
 		this.matchboxFhirContextProperties = Objects.requireNonNull(matchboxFhirContextProperties);
+		this.serverFhirVersion = serverFhirVersion;
+		this.cliContext = cliContext;
+		this.cliContext.setFhirVersion(this.serverFhirVersion.getFhirVersionString());
 	}
 
 	public CliContext getClientContext() {
 		return this.cliContext;
+	}
+
+	public FhirVersionEnum getServerFhirVersion() {
+		return this.serverFhirVersion;
+	}
+
+	public HttpRequestWrapper createWrapper(final HttpServletRequest request,
+														 final HttpServletResponse response) throws IOException {
+		return new HttpRequestWrapper(request, response, this.serverFhirVersion);
 	}
 
 	public NpmPackageVersionResourceEntity loadPackageAssetByUrl(String theCanonicalUrl) {
@@ -186,6 +210,11 @@ public class MatchboxEngineSupport {
 		if (ig != null) {
 			try {
 				validator.getIgLoader().loadIg(validator.getIgs(), validator.getBinaries(), ig, true);
+				if (cliContext.getIgs()!=null) {
+					for (final String igCp : cliContext.getIgs()) {
+						validator.getIgLoader().loadIg(validator.getIgs(), validator.getBinaries(), igCp, true);
+					}
+				}
 			} catch (final Exception e){
 				throw new IgLoadException(e);
 			}
@@ -265,7 +294,7 @@ public class MatchboxEngineSupport {
 		}
 		if (mainEngine == null) {
 			CliContext cliContextMain = new CliContext(this.cliContext);
-			if (cliContextMain.getFhirVersion().equals("4.0.1")) {
+			if (this.serverFhirVersion == FhirVersionEnum.R4) {
 				log.debug("Preconfigure FHIR R4");
 			    mainEngine = new MatchboxEngineBuilder().withXVersion(cliContextMain.getXVersion()).getEngineR4();
 				try {
@@ -290,8 +319,9 @@ public class MatchboxEngineSupport {
 					throw new IgLoadException("Failed to load R5 specials", e);
 				}
 				log.debug("Load R5 Specials types");
+				cliContextMain.setIg(this.getFhirCorePackage(cliContextMain));
 				this.configureValidationEngine(mainEngine, cliContextMain);
-			} else if (cliContextMain.getFhirVersion().equals("4.3.0")) {
+			} else if (this.serverFhirVersion == FhirVersionEnum.R4B) {
 				log.debug("Preconfigure FHIR R4B");
 			    mainEngine = new MatchboxEngineBuilder().withXVersion(cliContextMain.getXVersion()).getEngineR4B();
 				mainEngine.setIgLoader(new IgLoaderFromJpaPackageCache(mainEngine.getPcm(),
@@ -303,8 +333,9 @@ public class MatchboxEngineSupport {
 				this.myDaoRegistry,
 				this.myBinaryStorageSvc,
 				this.myTxManager));
+				cliContextMain.setIg(this.getFhirCorePackage(cliContextMain));
 				this.configureValidationEngine(mainEngine, cliContextMain);
-			} else if (cliContextMain.getFhirVersion().equals("5.0.0")) {
+			} else if (this.serverFhirVersion == FhirVersionEnum.R5) {
 				log.debug("Preconfigure FHIR R5");
 			    mainEngine = new MatchboxEngineBuilder().withXVersion(cliContextMain.getXVersion()).getEngineR5();
 				mainEngine.setIgLoader(new IgLoaderFromJpaPackageCache(mainEngine.getPcm(),
@@ -316,9 +347,11 @@ public class MatchboxEngineSupport {
 				this.myDaoRegistry,
 				this.myBinaryStorageSvc,
 				this.myTxManager));
+				cliContextMain.setIg(this.getFhirCorePackage(cliContextMain));
 				this.configureValidationEngine(mainEngine, cliContextMain);
+			} else {
+				throw new MatchboxUnsupportedFhirVersionException("getMatchboxEngineNotSynchronized", this.serverFhirVersion);
 			}
-			cliContextMain.setIg(this.getFhirCorePackage(cliContextMain));
 
 			log.info("Cached default engine forever {} with parameters {}",
 						(cliContextMain.getIg() != null ? "for " + cliContextMain.getIg() : ""),
@@ -491,7 +524,9 @@ public class MatchboxEngineSupport {
 			validator.getContext().setNoTerminologyServer(false);
 
 			try {
-				// Currently all terminology clients are to R4 for versin greater than R4
+				TerminologyClientContext.setAllowNonConformantServers(true);
+				TerminologyClientContext.setCanAllowNonConformantServers(true);
+				// Currently all terminology clients are to R4 for version greater than R4
 				final String txver = validator.setTerminologyServer(cli.getTxServer(), cli.getTxLog(), FhirPublication.R4, cli.isTxUseEcosystem());
 				log.debug("Version of the terminology server: {}", txver);
 			} catch (final Exception e) {
@@ -521,11 +556,15 @@ public class MatchboxEngineSupport {
 		validator.setDoNative(cli.isDoNative());
 		validator.setHintAboutNonMustSupport(cli.isHintAboutNonMustSupport());
 		validator.setAnyExtensionsAllowed(false);
-		for (String s : cli.getExtensions()) {
-			if ("any".equals(s)) {
-				validator.setAnyExtensionsAllowed(true);
-			} else {	
-				validator.getExtensionDomains().add(s);
+		if (cli.getExtensions() == null ) {
+			validator.setAnyExtensionsAllowed(false);
+		} else {
+			for (String s : cli.getExtensions()) {
+				if ("any".equals(s)) {
+					validator.setAnyExtensionsAllowed(true);
+				} else {	
+					validator.getExtensionDomains().add(s);
+				}
 			}
 		}
 		validator.setLanguage(cli.getLang());
@@ -548,7 +587,20 @@ public class MatchboxEngineSupport {
 		validator.setForPublication(cli.isForPublication());
 		validator.setShowTimes(true);
 		validator.setAllowExampleUrls(cli.isAllowExampleUrls());
-
+		validator.setCheckIPSCodes(cli.isCheckIpsCodes());
+		if (cli.getBundle() != null) {
+			validator.setQuestionnaireMode(cli.getQuestionnaireMode());
+			String[] bundle = cli.getBundle().split(" ");
+			if (bundle.length != 2) {
+				log.error("Bundle parameter must have two values, the rule and the profile, ignoring the bundle parameter");
+			} else {
+				String rule = bundle[0];
+				String profile = bundle[1];
+				validator.getBundleValidationRules().add(new org.hl7.fhir.r5.utils.validation.BundleValidationRule().setRule(rule).setProfile(profile));
+			}
+		}
+		validator.setR5BundleRelativeReferencePolicy(R5BundleRelativeReferencePolicy.fromCode(cli.getR5BundleRelativeReferencePolicy()));
+	    ReferenceValidationPolicy refpol = ReferenceValidationPolicy.CHECK_VALID;
 		if (!cli.isDisableDefaultResourceFetcher()) {
 			StandAloneValidatorFetcher fetcher = new StandAloneValidatorFetcher(validator.getPcm(), validator.getContext(),
 					validator);
@@ -562,13 +614,12 @@ public class MatchboxEngineSupport {
 			}
 			fetcher.setResolutionContext(cli.getResolutionContext());
 		} else {
-			validator.setPolicyAdvisor(new ValidationPolicyAdvisor(ReferenceValidationPolicy.CHECK_VALID));
-			// https://github.com/ahdis/matchbox/issues/334
-			// DisabledValidationPolicyAdvisor fetcher = new DisabledValidationPolicyAdvisor();
-			// validator.setPolicyAdvisor(fetcher);
-			// refpol = ReferenceValidationPolicy.CHECK_TYPE_IF_EXISTS;
+			DisabledValidationPolicyAdvisor fetcher = new DisabledValidationPolicyAdvisor();
+			validator.setPolicyAdvisor(fetcher);
+			refpol = ReferenceValidationPolicy.CHECK_TYPE_IF_EXISTS;
 		}
-		// validator.getBundleValidationRules().addAll(cliContext.getBundleValidationRules());
+		validator.getPolicyAdvisor().setPolicyAdvisor(new ValidationPolicyAdvisor(validator.getPolicyAdvisor() == null ? refpol : validator.getPolicyAdvisor().getReferencePolicy()));
+
 		validator.setJurisdiction(CodeSystemUtilities.readCoding(cli.getJurisdiction()));
 		// TerminologyCache.setNoCaching(cliContext.isNoInternalCaching());
 
@@ -576,11 +627,36 @@ public class MatchboxEngineSupport {
 		final Map<String, List<String>> suppressedWarnings =
 			Objects.requireNonNullElseGet(this.matchboxFhirContextProperties.getSuppressWarnInfo(),
 													HashMap::new);
+		final Map<String, List<String>> suppressedError =
+			Objects.requireNonNullElseGet(this.matchboxFhirContextProperties.getSuppressError(),
+													HashMap::new);
+
+		boolean apiDefinedWarnInfos = cli.getSuppressWarnInfos() != null;
+		boolean apiDefinedErrors = cli.getSuppressErrors() != null;
+
+		if (apiDefinedWarnInfos) {
+			Arrays.stream(cli.getSuppressWarnInfos())
+				.forEach(pattern -> this.addSuppressedWarnInfoToEngine(pattern, validator));
+			log.info("Suppressing info/warnings over API, not using configuration file");
+		}		
+		if (apiDefinedErrors) {
+			Arrays.stream(cli.getSuppressErrors())
+				.forEach(pattern -> this.addSuppressedErrorToEngine(pattern, validator));
+			log.info("Suppressing error over API, not using configuration file");
+		}
+
 		if (cli.getOnlyOneEngine()) {
 			// If we only have one engine, then ignore all warnings that are defined in the configuration file
-			suppressedWarnings.values().stream()
-				.flatMap(List::stream)
-				.forEach(pattern -> this.addSuppressedWarnInfoToEngine(pattern, validator));
+			if (!apiDefinedWarnInfos) {
+				suppressedWarnings.values().stream()
+					.flatMap(List::stream)
+					.forEach(pattern -> this.addSuppressedWarnInfoToEngine(pattern, validator));
+			}
+			if (!apiDefinedErrors) {
+				suppressedError.values().stream()
+					.flatMap(List::stream)
+					.forEach(pattern -> this.addSuppressedErrorToEngine(pattern, validator));
+			}		
 		} else {
 			// Otherwise, only ignore the warnings that are defined for the IGs that have been loaded in the engine
 			// Note: we remove the hash in the package, because the hash is also removed when reading the YAML
@@ -588,18 +664,29 @@ public class MatchboxEngineSupport {
 			validator.getContext().getLoadedPackages().stream()
 				.map(pkg -> pkg.replace("#", ""))
 				.forEach(ig -> {
-					suppressedWarnings.getOrDefault(ig, Collections.emptyList())
-						.forEach(pattern -> this.addSuppressedWarnInfoToEngine(pattern, validator));
-				});
-
+					if (!apiDefinedWarnInfos) {
+						suppressedWarnings.getOrDefault(ig, Collections.emptyList())
+							.forEach(pattern -> this.addSuppressedWarnInfoToEngine(pattern, validator));
+						}
+					if (!apiDefinedErrors) {
+						suppressedError.getOrDefault(ig, Collections.emptyList())
+							.forEach(pattern -> this.addSuppressedErrorToEngine(pattern, validator));
+					}
+			});
 			validator.getContext().getLoadedPackages().stream().filter(pkg -> pkg.contains("#"))
 				.map(pkg -> pkg.substring(0, pkg.indexOf("#")))
+				.map(pkg -> pkg.replace("#", ""))
 				.forEach(ig -> {
-					suppressedWarnings.getOrDefault(ig, Collections.emptyList())
-						.forEach(pattern -> this.addSuppressedWarnInfoToEngine(pattern, validator));
+					if (!apiDefinedWarnInfos) {
+						suppressedWarnings.getOrDefault(ig, Collections.emptyList())
+							.forEach(pattern -> this.addSuppressedWarnInfoToEngine(pattern, validator));
+					}
+					if (!apiDefinedErrors) {
+						suppressedError.getOrDefault(ig, Collections.emptyList())
+							.forEach(pattern -> this.addSuppressedErrorToEngine(pattern, validator));
+					}
 				});
 		}
-		log.debug("Added {} suppressed warnings for these IGs", validator.getSuppressedWarnInfoPatterns().size());
 	}
 
 	private void addSuppressedWarnInfoToEngine(final @NonNull String pattern,
@@ -611,5 +698,34 @@ public class MatchboxEngineSupport {
 		}
 		// Otherwise, add it as a simple string pattern
 		engine.addSuppressedWarnInfo(pattern);
+	}
+
+	/**
+	 * Adds a suppressed error pattern to the engine.
+	 *
+	 * @param pattern messageId@^regexPath
+	 * @param engine  The engine to add the pattern to.
+	 */
+	private void addSuppressedErrorToEngine(final @NonNull String pattern,
+															 final @NonNull MatchboxEngine engine) {
+		if (pattern.contains("@")) {
+			String id = pattern.substring(0, pattern.indexOf("@"));
+			String path = pattern.substring(pattern.indexOf("@")+1);
+			if (path.startsWith("^")) {
+				path = path.substring(1);
+				engine.addSuppressedError(id, path);
+			} else {
+				log.error("Suppress error pattern '{}' only supports regex with @^ pattern, ignoring it", pattern);
+			}
+		} else
+			engine.addSuppressedError(pattern, ".*");
+	}
+
+	public INpmPackageVersionResourceDao getMyPackageVersionResourceDao() {
+		return this.myPackageVersionResourceDao;
+	}
+
+	public PlatformTransactionManager getMyTxManager() {
+		return this.myTxManager;
 	}
 }

@@ -6,7 +6,7 @@
     <parent>
         <artifactId>matchbox</artifactId>
         <groupId>health.matchbox</groupId>
-        <version>3.9.11-Infoway</version>
+        <version>4.0.15-Infoway</version>
     </parent>
 
     <artifactId>matchbox-server</artifactId>
@@ -28,6 +28,7 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
         </dependency>
+
         <!-- This dependency includes the core HAPI-FHIR classes -->
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
@@ -74,6 +75,12 @@
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
             <artifactId>hapi-fhir-jpaserver-mdm</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework</groupId>
+                    <artifactId>spring-context</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <!-- This dependency includes the JPA CQL Server -->
         <!-- This dependency includes the OpenAPI Server -->
@@ -106,7 +113,6 @@
         <dependency>
             <groupId>commons-beanutils</groupId>
             <artifactId>commons-beanutils</artifactId>
-            <version>1.9.4</version>
         </dependency>
 
         <!-- If you are using HAPI narrative generation, you will need to include Thymeleaf as well.
@@ -176,6 +182,11 @@
         </dependency>
 
         <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
         </dependency>
@@ -216,8 +227,62 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <version>${spring_boot_version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+            <version>1.0.0-beta1</version>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
+            <version>1.0.0-beta1</version>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-hugging-face</artifactId>
+            <version>1.0.0-beta1</version>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-anthropic</artifactId>
+            <version>1.0.0-beta1</version>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-google-ai-gemini</artifactId>
+            <version>1.0.0-beta1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-mcp</artifactId>
+            <version>1.0.2</version>
+        </dependency>
+        <!--
+        This will be included as well as using Spring Automatic Configuration
+        once spring-ai and io.modelcontextprotocol.sdk are on par
+        -->
+        <!--<dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server</artifactId>
+            <version>1.0.2</version>
+        </dependency>-->
+
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp</artifactId>
+            <version>0.12.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-test</artifactId>
+            <version>${spring_version}</version>
+        </dependency>
+
     </dependencies>
 
     <build>

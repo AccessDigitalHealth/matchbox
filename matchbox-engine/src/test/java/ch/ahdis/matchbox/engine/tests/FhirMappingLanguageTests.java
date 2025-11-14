@@ -41,10 +41,10 @@ import org.hl7.fhir.r4.model.Questionnaire;
 import org.hl7.fhir.r4.model.Resource;
 import org.hl7.fhir.r4.model.StructureMap;
 import org.hl7.fhir.r5.formats.JsonParser;
+import org.hl7.fhir.r5.model.Composition;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import ch.ahdis.matchbox.engine.MatchboxEngine;
@@ -1302,5 +1302,31 @@ class FhirMappingLanguageTests {
 
 		CompareUtil.logMemory();
 	}
+	
+	@Test
+	void testBundleResolveJson() throws FHIRException, IOException {
+		MatchboxEngine engine = new MatchboxEngine(FhirMappingLanguageTests.engine);
+		StructureMap sm = engine.parseMap(getFileAsStringFromResources("/bundle-resolve.map"));
+		assertTrue(sm != null);
+		engine.addCanonicalResource(sm);
+		String result = engine.transform(getFileAsStringFromResources("/bundle-resolve.src.json"), true, "http://example.org/StructureMap/Bundle2Composition", true);
+		assertTrue(result != null);
+		//System.out.println(result);
+		Composition comp = (Composition) new JsonParser().parse(result);
+		assertEquals(2,  comp.getSection().get(0).getSection().size());
+		assertEquals(1,  comp.getSection().get(1).getSection().size());
+	}
+
+	@Test
+	void testParseFailWithError() throws FHIRException, IOException {
+		MatchboxEngine engine = new MatchboxEngine(FhirMappingLanguageTests.engine);
+		try {
+			StructureMap sm = engine.parseMap(getFileAsStringFromResources("/map-with-error.map"));
+			assertTrue(sm == null);
+		} catch (FHIRException e) {
+			// should fail
+		}
+	}
+
 
 }

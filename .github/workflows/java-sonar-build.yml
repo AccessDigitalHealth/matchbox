@@ -1,0 +1,51 @@
+name: SonarQube
+on:
+  workflow_dispatch: # Allows manual triggering of the workflow
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [ opened, synchronize ]
+  schedule:
+    - cron: '0 0 * * 2'  # Runs every Monday at 00:00 UTC
+    
+jobs:
+  build:
+    name: Build and Analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: 'zulu'
+      - name: Cache SonarQube packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2
+          restore-keys: ${{ runner.os }}-m2
+      - name: Build and analyze
+        continue-on-error: true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          export MAVEN_OPTS="$MAVEN_OPTS -Dorg.slf4j.simpleLogger.defaultLogLevel=error"
+          mvn -B --no-transfer-progress -q verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=AccessDigitalHealth_matchbox -l build.log
+      # Log is too large and so we are creating a log file and uploading it.
+      # this is why we need continue on error on the step above.
+      - name: Upload build log
+        uses: actions/upload-artifact@v5
+        with:
+          name: build-log
+          path: build.log          
+

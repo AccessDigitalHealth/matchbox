@@ -2,7 +2,6 @@ package ch.ahdis.matchbox.test;
 
 import ca.uhn.fhir.context.BaseRuntimeChildDefinition;
 import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.context.FhirVersionEnum;
 import ca.uhn.fhir.context.RuntimeResourceDefinition;
 import ca.uhn.fhir.jpa.starter.Application;
 import ch.ahdis.matchbox.validation.gazelle.models.validation.ValidationItem;
@@ -46,7 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 class MatchboxApiR4Test {
 	private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MatchboxApiR4Test.class);
 	private static final String TARGET_SERVER = "http://localhost:8081/matchboxv3";
-	private static final FhirContext FHIR_CONTEXT = FhirVersionEnum.R4.newContextCached();
+	private static final FhirContext FHIR_CONTEXT = FhirContext.forR4Cached();
 
 	private final ValidationClient validationClient = new ValidationClient(FHIR_CONTEXT, TARGET_SERVER + "/fhir");
 	private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -101,13 +100,13 @@ class MatchboxApiR4Test {
 		String sessionIdCore = getSessionId(operationOutcome);
 		assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome));
 		assertEquals("hl7.fhir.r4.core#4.0.1", getIg(operationOutcome));
-		assertEquals("http://localhost:8081/matchboxv3/fhir", getTxServer(operationOutcome));
+		assertEquals(TARGET_SERVER + "/tx", getTxServer(operationOutcome));
 
 		// tests against matchbox r4 test ig
 		String profileMatchbox = "http://matchbox.health/ig/test/r4/StructureDefinition/practitioner-identifier-required";
 		operationOutcome = validationClient.validate(resource, profileMatchbox);
 		assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome));
-		assertEquals("matchbox.health.test.ig.r4#0.1.0", getIg(operationOutcome));
+		assertEquals("matchbox.health.test.ig.r4#0.2.0", getIg(operationOutcome));
 		String sessionIdMatchbox = getSessionId(operationOutcome);
 
 		// verify that we have have different validation engine
@@ -132,7 +131,7 @@ class MatchboxApiR4Test {
 		assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome));
 		String sessionId2MatchboxTxNa = getSessionId(operationOutcome);
 		assertNotEquals(sessionIdMatchbox, sessionId2MatchboxTxNa);
-		assertEquals("matchbox.health.test.ig.r4#0.1.0", getIg(operationOutcome));
+		assertEquals("matchbox.health.test.ig.r4#0.2.0", getIg(operationOutcome));
 		assertEquals("n/a", getTxServer(operationOutcome));
 
 		// add new parameters should create a new validation engine for default validation
@@ -160,21 +159,21 @@ class MatchboxApiR4Test {
 		String sessionIdFirst = getSessionId(operationOutcome);
 
 		assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome));
-		assertEquals("matchbox.health.test.ig.r4#0.1.0", getIg(operationOutcome));
+		assertEquals("matchbox.health.test.ig.r4#0.2.0", getIg(operationOutcome));
 
 		// validate with the profile and the ig
 		Parameters parameters = new Parameters();
-		parameters.addParameter("ig", "matchbox.health.test.ig.r4#0.1.0");
+		parameters.addParameter("ig", "matchbox.health.test.ig.r4#0.2.0");
 		operationOutcome = validationClient.validate(resource, profileMatchbox, parameters);
 		String sessionIdSecond = getSessionId(operationOutcome);
 		assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome));
-		assertEquals("matchbox.health.test.ig.r4#0.1.0", getIg(operationOutcome));
+		assertEquals("matchbox.health.test.ig.r4#0.2.0", getIg(operationOutcome));
 		assertEquals(sessionIdFirst, sessionIdSecond);
 
-		operationOutcome = validationClient.validate(resource, profileMatchbox + "|0.1.0");
+		operationOutcome = validationClient.validate(resource, profileMatchbox + "|0.2.0");
 		String sessionIdThird = getSessionId(operationOutcome);
 		assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome));
-		assertEquals("matchbox.health.test.ig.r4#0.1.0", getIg(operationOutcome));
+		assertEquals("matchbox.health.test.ig.r4#0.2.0", getIg(operationOutcome));
 		assertEquals(sessionIdFirst, sessionIdThird);
 
 		// validate with the profile and the ig version, has an internal business version 9.9.9
@@ -182,13 +181,13 @@ class MatchboxApiR4Test {
 		operationOutcome = validationClient.validate(resource, profileMatchbox);
 		String sessionIdForth = getSessionId(operationOutcome);
 		assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome));
-		assertEquals("matchbox.health.test.ig.r4#0.1.0", getIg(operationOutcome));
+		assertEquals("matchbox.health.test.ig.r4#0.2.0", getIg(operationOutcome));
 		assertEquals(sessionIdFirst, sessionIdForth);
 
-		operationOutcome = validationClient.validate(resource, profileMatchbox + "|0.1.0");
+		operationOutcome = validationClient.validate(resource, profileMatchbox + "|0.2.0");
 		String sessionIdFifth = getSessionId(operationOutcome);
 		assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome));
-		assertEquals("matchbox.health.test.ig.r4#0.1.0", getIg(operationOutcome));
+		assertEquals("matchbox.health.test.ig.r4#0.2.0", getIg(operationOutcome));
 		assertEquals(sessionIdFirst, sessionIdFifth);
 	}
 
@@ -209,12 +208,12 @@ class MatchboxApiR4Test {
 		String sessionIdFirst = getSessionId(report);
 
 		assertEquals(0, getValidationFailures(report));
-		assertEquals("matchbox.health.test.ig.r4#0.1.0", getIg(report));
+		assertEquals("matchbox.health.test.ig.r4#0.2.0", getIg(report));
 
-		report = this.validateWithGazelle(resource, profileMatchbox + "|0.1.0");
+		report = this.validateWithGazelle(resource, profileMatchbox + "|0.2.0");
 		String sessionIdThird = getSessionId(report);
 		assertEquals(0, getValidationFailures(report));
-		assertEquals("matchbox.health.test.ig.r4#0.1.0", getIg(report));
+		assertEquals("matchbox.health.test.ig.r4#0.2.0", getIg(report));
 		assertEquals(sessionIdFirst, sessionIdThird);
 
 		// validate with the profile and the ig version, has an internal business version 9.9.9
@@ -222,13 +221,13 @@ class MatchboxApiR4Test {
 		report = this.validateWithGazelle(resource, profileMatchbox);
 		String sessionIdForth = getSessionId(report);
 		assertEquals(0, getValidationFailures(report));
-		assertEquals("matchbox.health.test.ig.r4#0.1.0", getIg(report));
+		assertEquals("matchbox.health.test.ig.r4#0.2.0", getIg(report));
 		assertEquals(sessionIdFirst, sessionIdForth);
 
-		report = this.validateWithGazelle(resource, profileMatchbox + "|0.1.0");
+		report = this.validateWithGazelle(resource, profileMatchbox + "|0.2.0");
 		String sessionIdFifth = getSessionId(report);
 		assertEquals(0, getValidationFailures(report));
-		assertEquals("matchbox.health.test.ig.r4#0.1.0", getIg(report));
+		assertEquals("matchbox.health.test.ig.r4#0.2.0", getIg(report));
 		assertEquals(sessionIdFirst, sessionIdFifth);
 	}
 
@@ -259,6 +258,57 @@ class MatchboxApiR4Test {
 																								 "http://hl7.org/fhir/StructureDefinition/Patient");
 		log.debug(FHIR_CONTEXT.newJsonParser().encodeResourceToString(operationOutcome));
 		assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome));
+	}
+
+	@Test
+	void validateIgnoreError() {
+
+		String patient = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n" + //
+						"<RelatedPerson xmlns=\"http://hl7.org/fhir\">\r\n" + //
+						"    <extension url=\"http://hl7.org/fhir/StructureDefinition/patient-citizenship\">\r\n" + //
+						"        <extension url=\"code\">\r\n" + //
+						"            <valueCodeableConcept>\r\n" + //
+						"                <coding>\r\n" + //
+						"                    <system value=\"urn:iso:std:iso:3166\"/>\r\n" + //
+						"                    <code value=\"CH\"/>\r\n" + //
+						"                    <display value=\"Switzerland\"/>\r\n" + //
+						"                </coding>\r\n" + //
+						"            </valueCodeableConcept>\r\n" + //
+						"        </extension>\r\n" + //
+						"    </extension>\r\n" + //
+						"    <patient>\r\n" + //
+						"        <display value=\"Ungeborenes Kind\"/>\r\n" + //
+						"    </patient>\r\n" + //
+						"</RelatedPerson>";
+
+		IBaseOperationOutcome operationOutcome = this.validationClient.validate(patient,
+																										"http://hl7.org/fhir/StructureDefinition/RelatedPerson");
+		assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome));
+	}
+
+	@Test
+	void validateIgnoreErrorMatchboxTest() throws Exception {
+		String practitioner = "<Practitioner xmlns=\"http://hl7.org/fhir\">\n" + //
+						"    <extension url=\"http://hl7.org/fhir/StructureDefinition/unknown\">\n" + //
+						"        <valueCodeableConcept>\n" + //
+						"            <coding>\n" + //
+						"                <system value=\"urn:iso:std:iso:3166\" />\n" + //
+						"                <code value=\"CH\" />\n" + //
+						"                <display value=\"Switzerland\" />\n" + //
+						"            </coding>\n" + //
+						"        </valueCodeableConcept>\n" + //
+						"    </extension>\n" + //
+						"    <identifier>\n" + //
+						"        <system value=\"urn:oid:2.51.1.3\" />\n" + //
+						"        <value value=\"7610000050719\" />\n" + //
+						"    </identifier>\n" + //
+						"</Practitioner>";
+		
+		IBaseOperationOutcome operationOutcome = this.validationClient.validate(practitioner,"http://matchbox.health/ig/test/r4/StructureDefinition/practitioner-identifier-required");
+		assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome));
+
+		ValidationReport report = this.validateWithGazelle(practitioner, "http://matchbox.health/ig/test/r4/StructureDefinition/practitioner-identifier-required");
+		assertEquals(0, getValidationFailures(report));
 	}
 
 	@Test

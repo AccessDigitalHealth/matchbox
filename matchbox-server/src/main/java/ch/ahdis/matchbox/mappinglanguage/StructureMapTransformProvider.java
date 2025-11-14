@@ -53,6 +53,7 @@ import ch.ahdis.matchbox.CliContext;
 import ch.ahdis.matchbox.util.MatchboxEngineSupport;
 import ch.ahdis.matchbox.providers.StructureMapResourceProvider;
 import ch.ahdis.matchbox.engine.MatchboxEngine;
+import ch.ahdis.matchbox.engine.cli.VersionUtil;
 import ch.ahdis.matchbox.engine.exception.MatchboxUnsupportedFhirVersionException;
 import org.hl7.fhir.r4.model.Narrative.NarrativeStatus;
 import org.hl7.fhir.r5.model.*;
@@ -100,6 +101,7 @@ public class StructureMapTransformProvider extends StructureMapResourceProvider 
 		final String body = new String(theServletRequest.getInputStream().readAllBytes()).trim();
 		@Nullable String resource = null;
 		
+
 		EncodingEnum encoding = EncodingEnum.forContentType(theServletRequest.getContentType());
 		if (encoding == null) {
 			encoding = EncodingEnum.detectEncoding(body);
@@ -211,11 +213,46 @@ public class StructureMapTransformProvider extends StructureMapResourceProvider 
 			final var responseContentType = this.parseRequestedResponseType(theServletRequest);
 			theServletResponse.setContentType(responseContentType);
 
+			final var resultParameters = new Parameters();
+			var debugParameter = theServletRequest.getParameter("debug");
+			Parameters.ParametersParameterComponent traceToParameter = null;
+			if ("true".equalsIgnoreCase(debugParameter)) {
+				traceToParameter = resultParameters.addParameter();
+				traceToParameter.setName("trace");
+			}
+
 			final var transformed = matchboxEngine.transform(resource,
 																			 encoding == EncodingEnum.JSON,
 																			 map.getUrl(),
-																			 responseContentType.contains("json"));
-			theServletResponse.getOutputStream().write(transformed.getBytes(StandardCharsets.UTF_8));
+																			 responseContentType.contains("json"), 
+																			 traceToParameter);
+
+			// if the debug=true flag is on the input, instead wrap this output in a Parameters resource
+			// and return it
+			if ("true".equalsIgnoreCase(debugParameter)) {
+				// var outcome = parameters.addParameter();
+				// outcome.setName("outcome");
+				resultParameters.addParameter("result", new StringType(transformed));
+
+				// Add in the parameters used for processing
+				var paramsUsed = resultParameters.addParameter();
+				paramsUsed.setName("parameters");
+				paramsUsed.addPart()
+					.setName("evaluator")
+					.setValue(new StringType("Matchbox v" + VersionUtil.getVersion()));
+				paramsUsed.addPart()
+					.setName("map")
+					.setResource(map);
+
+				// return the parameters resource
+				theServletResponse.setContentType(Constants.CT_FHIR_JSON_NEW);
+				theServletResponse.setCharacterEncoding(Constants.CHARSET_UTF8);
+				theServletResponse.getOutputStream().write(this.fhirR5Context.newJsonParser().setPrettyPrint(true)
+					.encodeResourceToString(resultParameters).getBytes(StandardCharsets.UTF_8));
+			}
+			else {
+				theServletResponse.getOutputStream().write(transformed.getBytes(StandardCharsets.UTF_8));
+			}
 		} finally {
 			// Let's clean up the engine of the models and map we've cached, if any
 			// This allows re-use of the engine for other transformations, decreasing the startup time

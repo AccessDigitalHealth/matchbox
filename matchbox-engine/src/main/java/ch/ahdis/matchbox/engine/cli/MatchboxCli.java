@@ -41,14 +41,15 @@ import org.hl7.fhir.utilities.TimeTracker;
 import org.hl7.fhir.utilities.Utilities;
 import org.hl7.fhir.utilities.VersionUtilities;
 import org.hl7.fhir.validation.Scanner;
-import org.hl7.fhir.validation.cli.model.CliContext;
-import org.hl7.fhir.validation.cli.utils.Display;
-import org.hl7.fhir.validation.cli.utils.EngineMode;
-import org.hl7.fhir.validation.cli.utils.Params;
+import org.hl7.fhir.validation.service.model.ValidationContext;
+import org.hl7.fhir.validation.service.utils.EngineMode;
+import org.hl7.fhir.validation.cli.Display;
+import org.hl7.fhir.validation.cli.param.Params;
 import org.hl7.fhir.validation.testexecutor.TestExecutor;
 import org.hl7.fhir.validation.testexecutor.TestExecutorParams;
 
 import ch.ahdis.matchbox.engine.MatchboxEngine;
+import lombok.extern.slf4j.Slf4j;
 
 
 /**
@@ -58,6 +59,7 @@ import ch.ahdis.matchbox.engine.MatchboxEngine;
  *
  * @author Oliver Egger
  */
+@Slf4j
 public class MatchboxCli {
 
   public static final String HTTP_PROXY_HOST = "http.proxyHost";
@@ -75,7 +77,7 @@ public class MatchboxCli {
     TimeTracker.Session tts = tt.start("Loading");
     
     System.out.println(VersionUtil.getPoweredBy());
-    Display.displaySystemInfo(System.out);
+    Display.displaySystemInfo(log);
 
     if (Params.hasParam(args, Params.PROXY)) {
       assert Params.getParam(args, Params.PROXY) != null : "PROXY arg passed in was NULL";
@@ -117,18 +119,18 @@ public class MatchboxCli {
       System.setProperty(JAVA_DISABLED_PROXY_SCHEMES, "");
     }
 
-    CliContext cliContext = Params.loadCliContext(args);
+    ValidationContext validationContext = Params.loadValidationContext(args);
 
     FileFormat.checkCharsetAndWarnIfNotUTF8(System.out);
 
     if (shouldDisplayHelpToUser(args)) {
-      Display.displayHelpDetails(System.out, "help/help.txt");
+      Display.displayHelpDetails(log, "help/help.txt");
     } else if (Params.hasParam(args, Params.TEST)) {
       parseTestParamsAndExecute(args);
     }
     else {
-      Display.printCliParamsAndInfo(args);
-      doValidation(tt, tts, cliContext);
+      Display.printCliParamsAndInfo(log,args);
+      doValidation(tt, tts, validationContext);
     }
   }
 
@@ -155,7 +157,7 @@ public class MatchboxCli {
       || Params.hasParam(args, "/?"));
   }
 
-  private static void doValidation(TimeTracker tt, TimeTracker.Session tts, CliContext cliContext) throws Exception {
+  private static void doValidation(TimeTracker tt, TimeTracker.Session tts, ValidationContext cliContext) throws Exception {
     if (cliContext.getSv() == null) {
       cliContext.setSv(matchboxService.determineVersion(cliContext));
     }

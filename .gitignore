@@ -67,6 +67,9 @@ $RECYCLE.BIN/
 # Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
 
 # User-specific stuff
+.idea
+.idea/misc.xml
+.idea/encodings.xml
 .idea/**/workspace.xml
 .idea/**/tasks.xml
 .idea/**/usage.statistics.xml
@@ -103,6 +106,7 @@ $RECYCLE.BIN/
 .idea/*.iml
 .idea/modules
 .idea/sonarlint
+.idea/copilot.data.*.xml
 *.iml
 *.ipr
 
@@ -232,3 +236,7 @@ matchbox-server/tx.html
 matchbox-server/test.html
 matchbox-server/src/main/resources/static/3rdpartylicenses.txt
 matchbox-server/src/main/resources/static/prerendered-routes.json
+
+*.repomixignore
+repomix-output.xml
+repomix.config.json

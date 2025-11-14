@@ -16,8 +16,17 @@ They can be set in the Spring configuration (e.g. `application.properties`/`appl
 | `matchbox.fhir.context.onlyOneEngine`    | `false`       | Forces the server to initialize only one engine. See the section [_Only one engine_](#only-one-engine) below.                                                   |
 | `matchbox.fhir.context.xVersion`         | `false`       | Allows to transform resources between FHIR versions. See the section [_Transforming resources between FHIR versions_](#transform-cross-version) below.          |
 | `matchbox.fhir.context.suppressWarnInfo` | `{}`          | The list of warnings/infos to suppress in validation reports. See [_Suppress warning/information-level issues in validation_](validation.md#suppress-warnings). |
+| `matchbox.fhir.context.suppressError` | `{}`          | The list of errors to suppress in validation reports. See [_Suppress error-level issues in validation_](validation.md#suppress-errors). |
 | `matchbox.fhir.context.httpReadOnly`     | `false`       | Whether the server is in read-only mode or not. See the section [_Read-only mode_](#read-only) below.                                                           |
 | `matchbox.fhir.context.extensions`       | `any`         | The list of domains allowed in extensions while validating resources; `any` will allow all extensions.                                                          |
+| `matchbox.fhir.context.analyzeOutcomeWithAI`       |          | Whether the validation outcome should be analyzed by a LLM or not. Requires the LLM parameters to be correctly set.                                                          |
+| `matchbox.fhir.context.analyzeOutcomeWithAIOnError`       |          | Whether the validation outcome should be analyzed by a LLM, when it includes `error` or `fatal` issues, or not. Requires the LLM parameters to be correctly set.                                                          |
+| `matchbox.fhir.context.llm.provider`       |          | The LLM provider used for the AI analysis of validation.                                                          |
+| `matchbox.fhir.context.llm.modelName`       |          | The LLM model used for the AI analysis of validation.                                                          |
+| `matchbox.fhir.context.llm.apiKey`       |          | Your API key for the desired LLM provider.                                                          |
+| `spring.ai.mcp.server.enabled`       |          | Whether matchbox should be provided as MCP-Server or not.                                                          |
+
+In addition for validation the different [java validator parameters](https://confluence.hl7.org/spaces/FHIR/pages/35718580/Using+the+FHIR+Validator) can also be configured for default values: e.g: matchbox.fhir.context.displayIssuesAreWarnings is set default to true, but you can overwrite that by providing another value. To see the current supported list of parameters, you can check the OperationDefinition of $validate on matchbox [test instance](https://test.ahdis.ch/matchboxv3/fhir/OperationDefinition/-s-validate).
 
 See an example of configuration, to show the expected format:
 
@@ -25,6 +34,7 @@ See an example of configuration, to show the expected format:
 matchbox:
   fhir:
     context:
+      displayIssuesAreWarnings: false
       igsPreloaded: ch.fhir.ig.ch-elm#1.4.0
       suppressWarnInfo:
         hl7.fhir.r4.core#4.0.1:
@@ -33,6 +43,12 @@ matchbox:
         ch.fhir.ig.ch-elm:
           - "regex:Binding for path (.+) has no source, so can't be checked"
           - "regex:None of the codings provided are in the value set 'Observation Interpretation Codes'(.*)"
+      analyzeOutcomeWithAIOnError: true
+      llm:
+        provider: anthropic
+        modelName: claude-3-5-sonnet-20241022
+        apiKey: sk-xxx
+
 ```
 
 The HAPI configuration parameters are also available.
@@ -80,8 +96,9 @@ It provides the following advantages:
 
 - It lowers the memory and CPU consumption, as a single engine is shared among all requests.
 - It speeds up the response time, as the engine is already initialized and ready to use.
+- You can overwrite conformance resources (e.g. update StructureMaps, ConceptMaps)
 
-It is helpful to enable this mode when the server is used in a production environment (e.g. as a validation server).
+It is helpful to enable this mode when the server is used in a development environment (e.g. as a validation server or for FML map development).
 
 Disabling this mode is recommended when more context separation is required, in particular when dealing with the 
 following situations:
@@ -130,3 +147,32 @@ This mode will load the [FHIR Cross-Version Mapping Pack](https://build.fhir.org
 which contains _StructureMaps_ for all FHIR Core resources.
 Matchbox will also force the right version on the FHIR Core _StructureDefinitions_, to allow their use by the 
 _StructureMaps_.
+
+
+## LLM support {: #llm-support}
+Adding `llm` configurations will allow the server to make API calls to the specified LLM and add an analysis of the validation results to the operation outcome. This provides the user with AI generated instructions on how to fix errors in the validated FHIR resource.
+
+This feature requires a provider, model and API key to be defined in the applications configuration.
+
+Supported LLMs:
+
+| Provider                                            | Recommended Model           | Supported Models                                                                                               |
+|-----------------------------------------------------|-----------------------------|----------------------------------------------------------------------------------------------------------------|
+| [OpenAI](https://openai.com/index/openai-api/) (`openai`)     | `gpt-4o-mini`               | `gpt-3.5-turbo`, `gpt-4`, `gpt-4o`, `gpt-4o-mini`                                                              |
+| [Anthropic](https://www.anthropic.com/api) (`anthropic`)| `claude-3-5-sonnet-20241022`         | `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`, `claude-3-sonnet-20240229`, `claude-3-opus-20240229`|
+
+To use this feature, `analyzeOutcomeWithAI` or `analyzeOutcomeWithAIOnError` must be set to `true` by the user in the validation settings.
+
+Setting `analyzeOutcomeWithAIOnError` to `true` will perform the AI analysis on all validations that include issues labeled `error` or `fatal`. Setting `analyzeOutcomeWithAI` to `false` will overwrite `analyzeOutcomeWithAIOnError` and the analysis is not performed. Check the following table for an overview.
+
+| analyzeOutcomeWithAIOnError | analyzeOutcomeWithAI | Errors in validation | Perform analysis |
+| --------------------------- | -------------------- | -------------------- | ---------------- |
+| `false`                       | `false`                | \-                   | no            |
+| `false`                       | \-                   | \-                   | no            |
+| `false`                       | `true`                 | \-                   | yes             |
+| `true`                        | `false`                | no                | no            |
+| `true`                        | `false`                | yes                 | no            |
+| `true`                        | \-                   | no                | no            |
+| `true`                        | \-                   | yes                 | yes             |
+| `true`                        | `true`                 | no                | yes             |
+| `true`                        | `true`                 | yes                 | yes             |

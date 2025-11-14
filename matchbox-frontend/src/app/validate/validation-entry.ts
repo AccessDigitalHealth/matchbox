@@ -1,5 +1,5 @@
-import { IssueSeverity, OperationResult } from '../util/operation-result';
-import {ValidationParameter, ValidationParameterDefinition} from "./validation-parameter";
+import {IssueSeverity, OperationResult} from '../util/operation-result';
+import {ValidationParameter} from "./validation-parameter";
 
 export class ValidationEntry {
   readonly filename: string; // "package/package.json",
@@ -8,14 +8,19 @@ export class ValidationEntry {
   resourceId: string;
   readonly mimetype: string;
   result: OperationResult | undefined;
-  readonly profiles: string[] = [];
-  selectedProfile: string;
+  aiRecommendation: string;
+  readonly extractedProfiles: string[] = [];
+  validationProfile: string;
   ig?: string;
   readonly date: Date;
   readonly validationParameters: ValidationParameter[] = [];
   public loading: boolean = false;
 
-  constructor(filename: string, resource: string, mimetype: string | null, profiles: string[] | null, settings: ValidationParameter[] = []) {
+  constructor(filename: string,
+              resource: string,
+              mimetype: string | null,
+              settings: ValidationParameter[] = [],
+              validationProfile: string | null = null) {
     this.filename = filename;
     this.resource = resource;
     this.validationParameters = settings;
@@ -30,21 +35,17 @@ export class ValidationEntry {
       }
     }
 
-    if (profiles) {
-      this.profiles = profiles;
-    }
     this.date = new Date();
+    this.validationProfile = validationProfile;
 
-    if (this.mimetype === 'application/fhir+json') {
-      this.extractJsonInfo();
-    } else {
-      this.extractXmlInfo();
-    }
-
-    if (this.profiles && this.profiles.length) {
-      this.selectedProfile = this.profiles[0];
-    } else if (this.resourceType) {
-      this.selectedProfile = 'http://hl7.org/fhir/StructureDefinition/' + this.resourceType;
+    try {
+      if (this.mimetype === 'application/fhir+json') {
+        this.extractJsonInfo();
+      } else {
+        this.extractXmlInfo();
+      }
+    } catch (e) {
+      console.error('Error parsing resource to validate: ', e);
     }
   }
 
@@ -74,6 +75,10 @@ export class ValidationEntry {
     this.result = OperationResult.fromOperationOutcome(operationOutcome);
   }
 
+  setAiRecommendation(operationOutcome: fhir.r4.OperationOutcome): void {
+    this.aiRecommendation = operationOutcome.text.div
+  }
+
   extractJsonInfo(): void {
     const res = <fhir.r4.Resource>JSON.parse(this.resource);
     if (res?.resourceType) {
@@ -81,7 +86,7 @@ export class ValidationEntry {
       this.resourceId = res.id;
     }
     if (res.meta?.profile) {
-      this.profiles.push(...res.meta.profile);
+      this.extractedProfiles.push(...res.meta.profile);
     }
   }
 
@@ -106,7 +111,7 @@ export class ValidationEntry {
         let posProfileValue = this.resource.indexOf('value="', posProfileLeft) + 7;
         let posProfileValueRight = this.resource.indexOf('"', posProfileValue);
         if (posProfileValue < posProfileValueRight) {
-          this.profiles.push(this.resource.substring(posProfileValue, posProfileValueRight));
+          this.extractedProfiles.push(this.resource.substring(posProfileValue, posProfileValueRight));
         }
       }
     }
