@@ -68,8 +68,6 @@ $RECYCLE.BIN/
 
 # User-specific stuff
 .idea
-.idea/misc.xml
-.idea/encodings.xml
 .idea/**/workspace.xml
 .idea/**/tasks.xml
 .idea/**/usage.statistics.xml
