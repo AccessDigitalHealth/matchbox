@@ -13,9 +13,11 @@ ENV HOME=/home/matchbox
 RUN mkdir -p /database && chown matchbox:matchbox /database
 RUN mkdir -p /config && chown matchbox:matchbox /config
 RUN chown matchbox:matchbox /
+COPY with-ca/application.yaml /config
+COPY with-ca/fhir-settings.json /config
 
 USER matchbox
 
-ENTRYPOINT java -Xmx3072M -Dfhir.settings.path=/config/fhir-settings.json -Dspring.config.additional-location=optional:file:/config/application.yaml,optional:file:application.yaml -jar /matchbox.jar
+ENTRYPOINT java -Xmx3072M -Dfhir.settings.path=/config/fhir-settings.json -Dspring.config.additional-location=file:/config/application.yaml -jar /matchbox.jar
 
 # used by .github/workflows/
