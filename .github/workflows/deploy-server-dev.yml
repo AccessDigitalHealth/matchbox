@@ -8,7 +8,7 @@ on:
 jobs:
   call-template:
     name: Development Environment
-    uses: deploy-server-template.yml
+    uses: ./.github/workflows/deploy-server-template.yml
     secrets:
       AWS_ACCESS_KEY_ID: ${{ secrets.GLOBAL_DEV_AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.GLOBAL_DEV_AWS_SECRET_ACCESS_KEY }}

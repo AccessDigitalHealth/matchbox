@@ -6,7 +6,7 @@ on:
 jobs:
   call-template:
     name: Production Environment
-    uses: deploy-server-template.yml
+    uses: ./.github/workflows/deploy-server-template.yml
     secrets:
       AWS_ACCESS_KEY_ID: ${{ secrets.GLOBAL_PROD_AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.GLOBAL_PROD_AWS_SECRET_ACCESS_KEY }}
