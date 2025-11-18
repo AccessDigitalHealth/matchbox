@@ -30,7 +30,7 @@ jobs:
       EB_ENV_NAME: matchbox-server-${{ inputs.environment }}-env
       ECR_REPOSITORY: infoway/matchbox-server
       BUCKET_NAME: infoway-${{ inputs.environment }}-github-deployment
-      ECR_URL: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+      ECR_URL: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ inputs.AWS_REGION }}.amazonaws.com
       MAVEN_CACHE_FOLDER: ~/.m2/repository
 
     steps:
