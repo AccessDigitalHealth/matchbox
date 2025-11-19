@@ -1,4 +1,4 @@
-name: Deploy API to Development
+name: Deploy Matchbox Server to Development
 
 on:
   push:
@@ -15,4 +15,4 @@ jobs:
       AWS_ACCOUNT_ID: ${{ secrets.GLOBAL_DEV_AWS_ACCOUNT_ID }}
     with:
       environment: dev
-      AWS_REGION: ${{ secrets.GLOBAL_DEV_AWS_REGION }}
+      AWS_REGION: ${{ vars.GLOBAL_DEV_AWS_REGION }}
