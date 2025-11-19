@@ -91,16 +91,16 @@ jobs:
         run: |
           echo "ZIP_FILE=${{ env.EB_APP_VERSION }}.zip" >> $GITHUB_ENV
 
+      - name: Upload Dockerrun.aws.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: matchbox-server-artifact
+          path: Dockerrun.aws.json
+
       - name: Zip deployment bundle
         run: |
           cat Dockerrun.aws.json
           zip -r "${{ env.ZIP_FILE }}" Dockerrun.aws.json
-
-      - name: Upload Deployment File
-        uses: actions/upload-artifact@v4
-        with:
-          name: matchbox-server-artifact
-          path: "${{ env.ZIP_FILE }}"
 
       - name: Build with Maven without tests
         run: mvn package -DskipTests -Dmaven.repo.local="${{ env.MAVEN_CACHE_FOLDER }}"
