@@ -38,9 +38,7 @@ jobs:
         run: |
           echo "EB_APP_NAME is $EB_APP_NAME"
           echo "EB_ENV_NAME is $EB_ENV_NAME"
-          echo "ECR_REPOSITORY is $ECR_REPOSITORY"
           echo "AWS_REGION is $AWS_REGION"
-          echo "ECR_URL is $ECR_URL"
 
       - name: Checkout Code
         uses: actions/checkout@v5
