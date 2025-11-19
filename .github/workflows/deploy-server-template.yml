@@ -112,6 +112,7 @@ jobs:
 
       - name: Build Docker image
         run: |
+          cd matchbox-server
           docker build --build-arg ENVIRONMENT=${{ inputs.environment }} --build-arg VERSION=${{ env.SHORT_HASH }} --build-arg TIMESTAMP=${{ env.TIMESTAMP }} -t ${{ env.ECR_REPOSITORY }}:latest .
           docker tag ${{ env.ECR_REPOSITORY }}:latest "${{ env.ECR_URL }}/${{ env.ECR_REPOSITORY }}:${{ inputs.environment }}"
           docker tag ${{ env.ECR_REPOSITORY }}:latest "${{ env.ECR_URL }}/${{ env.ECR_REPOSITORY }}:${{ env.SHORT_HASH }}"
