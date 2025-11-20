@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     env:
-      MAVEN_CACHE_FOLDER: ~/.m2/repository
+      MAVEN_CACHE_FOLDER: ${{ github.workspace }}/.m2/repository
       EB_APP_NAME: matchbox
       EB_ENV_NAME: matchbox-server-${{ inputs.environment }}-env
       ECR_REPOSITORY: infoway/matchbox-server
@@ -105,7 +105,7 @@ jobs:
       - name: Cache Maven packages
         uses: actions/cache@v4
         with:
-          path: ~/.m2/repository
+          path: ${{ github.workspace }}/.m2/repository
           key: maven-${{ runner.os }}-${{ env.EB_ENV_NAME }}
           restore-keys: |
             maven-${{ runner.os }}-${{ env.EB_ENV_NAME }}
