@@ -70,14 +70,6 @@ jobs:
       - name: Set short commit hash
         run: echo "Short Hash ${{ env.SHORT_HASH }}"
 
-      - name: Cache Maven packages
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.MAVEN_CACHE_FOLDER }}
-          key: maven-${{ runner.os }}-${{ env.EB_ENV_NAME }}
-          restore-keys: |
-            maven-${{ runner.os }}-${{ env.EB_ENV_NAME }}
-
       - name: Build EB Version
         run: |
           echo "EB_APP_VERSION=${{ env.EB_APP_NAME }}-${{ env.SHORT_HASH }}" >> $GITHUB_ENV
@@ -109,6 +101,14 @@ jobs:
         run: |
           cat Dockerrun.aws.json
           zip -r "${{ env.ZIP_FILE }}" Dockerrun.aws.json
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: "${{ env.MAVEN_CACHE_FOLDER }}"
+          key: maven-${{ runner.os }}-${{ env.EB_ENV_NAME }}
+          restore-keys: |
+            maven-${{ runner.os }}-${{ env.EB_ENV_NAME }}
 
       - name: Build with Maven without tests
         run: mvn package -DskipTests -Dmaven.repo.local="${{ env.MAVEN_CACHE_FOLDER }}"
