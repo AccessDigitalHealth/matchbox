@@ -19,6 +19,8 @@ on:
         required: true
       AWS_SECRET_ACCESS_KEY:
         required: true
+      FHIR_JSON_BASE64:
+        required: true
 
 jobs:
   Deploy:
@@ -26,21 +28,19 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     env:
+      MAVEN_CACHE_FOLDER: ${{ github.workspace }}/.m2/repository
       EB_APP_NAME: matchbox
       EB_ENV_NAME: matchbox-server-${{ inputs.environment }}-env
       ECR_REPOSITORY: infoway/matchbox-server
       BUCKET_NAME: infoway-${{ inputs.environment }}-github-deployment
-      ECR_URL: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
-      MAVEN_CACHE_FOLDER: ~/.m2/repository
+      ECR_URL: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ inputs.AWS_REGION }}.amazonaws.com
 
     steps:
       - name: Print environment variable
         run: |
           echo "EB_APP_NAME is $EB_APP_NAME"
           echo "EB_ENV_NAME is $EB_ENV_NAME"
-          echo "ECR_REPOSITORY is $ECR_REPOSITORY"
           echo "AWS_REGION is $AWS_REGION"
-          echo "ECR_URL is $ECR_URL"
 
       - name: Checkout Code
         uses: actions/checkout@v5
@@ -53,6 +53,12 @@ jobs:
           java-version: "21"
           distribution: "temurin"
 
+      - name: Decode Base64 and write to fhir-settings.json
+        run: |
+          cd matchbox-server/with-ca
+          echo "${{ secrets.FHIR_JSON_BASE64 }}" | base64 --decode > fhir-settings.json
+          cd ../..
+
       - name: Generate Today's Date
         run: |
           echo "TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%S.%3NZ')" >> $GITHUB_ENV
@@ -63,14 +69,6 @@ jobs:
 
       - name: Set short commit hash
         run: echo "Short Hash ${{ env.SHORT_HASH }}"
-
-      - name: Cache Maven packages
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.MAVEN_CACHE_FOLDER }}
-          key: maven-${{ runner.os }}-${{ env.EB_ENV_NAME }}
-          restore-keys: |
-            maven-${{ runner.os }}-${{ env.EB_ENV_NAME }}
 
       - name: Build EB Version
         run: |
@@ -93,10 +91,24 @@ jobs:
         run: |
           echo "ZIP_FILE=${{ env.EB_APP_VERSION }}.zip" >> $GITHUB_ENV
 
+      - name: Upload Dockerrun.aws.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: matchbox-server-artifact
+          path: Dockerrun.aws.json
+
       - name: Zip deployment bundle
         run: |
           cat Dockerrun.aws.json
           zip -r "${{ env.ZIP_FILE }}" Dockerrun.aws.json
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.m2/repository
+          key: maven-${{ runner.os }}-${{ env.EB_ENV_NAME }}
+          restore-keys: |
+            maven-${{ runner.os }}-${{ env.EB_ENV_NAME }}
 
       - name: Build with Maven without tests
         run: mvn package -DskipTests -Dmaven.repo.local="${{ env.MAVEN_CACHE_FOLDER }}"
@@ -114,6 +126,7 @@ jobs:
 
       - name: Build Docker image
         run: |
+          cd matchbox-server
           docker build --build-arg ENVIRONMENT=${{ inputs.environment }} --build-arg VERSION=${{ env.SHORT_HASH }} --build-arg TIMESTAMP=${{ env.TIMESTAMP }} -t ${{ env.ECR_REPOSITORY }}:latest .
           docker tag ${{ env.ECR_REPOSITORY }}:latest "${{ env.ECR_URL }}/${{ env.ECR_REPOSITORY }}:${{ inputs.environment }}"
           docker tag ${{ env.ECR_REPOSITORY }}:latest "${{ env.ECR_URL }}/${{ env.ECR_REPOSITORY }}:${{ env.SHORT_HASH }}"

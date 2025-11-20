@@ -1,4 +1,4 @@
-name: Deploy API to Development
+name: Deploy Matchbox Server to Development
 
 on:
   push:
@@ -8,11 +8,12 @@ on:
 jobs:
   call-template:
     name: Development Environment
-    uses: deploy-server-template.yml
+    uses: ./.github/workflows/deploy-server-template.yml
     secrets:
       AWS_ACCESS_KEY_ID: ${{ secrets.GLOBAL_DEV_AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.GLOBAL_DEV_AWS_SECRET_ACCESS_KEY }}
       AWS_ACCOUNT_ID: ${{ secrets.GLOBAL_DEV_AWS_ACCOUNT_ID }}
+      FHIR_JSON_BASE64: ${{ secrets.FHIR_JSON_BASE64 }}
     with:
       environment: dev
       AWS_REGION: ${{ vars.GLOBAL_DEV_AWS_REGION }}
