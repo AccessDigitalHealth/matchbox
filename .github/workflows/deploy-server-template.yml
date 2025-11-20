@@ -19,6 +19,8 @@ on:
         required: true
       AWS_SECRET_ACCESS_KEY:
         required: true
+      FHIR_JSON_BASE64:
+        required: true
 
 jobs:
   Deploy:
@@ -50,6 +52,13 @@ jobs:
         with:
           java-version: "21"
           distribution: "temurin"
+
+      - name: Decode Base64 and write to fhir-settings.json
+        run: |
+          cd matchbox-server/with-ca
+          echo "${{ secrets.FHIR_JSON_BASE64 }}" | base64 --decode > fhir-settings.json
+          cat fhir-settings.json
+          cd ../..
 
       - name: Generate Today's Date
         run: |

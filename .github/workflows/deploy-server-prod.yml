@@ -11,6 +11,7 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.GLOBAL_PROD_AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.GLOBAL_PROD_AWS_SECRET_ACCESS_KEY }}
       AWS_ACCOUNT_ID: ${{ secrets.GLOBAL_PROD_AWS_ACCOUNT_ID }}
+      FHIR_JSON_BASE64: ${{ secrets.FHIR_JSON_BASE64 }}
     with:
       environment: prod
       AWS_REGION: ${{ vars.GLOBAL_PROD_AWS_REGION }}
