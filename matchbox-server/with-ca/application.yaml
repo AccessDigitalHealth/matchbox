@@ -113,9 +113,9 @@ hapi:
       pmir150:
         name: ihe.iti.pmir
         version: 1.5.0
-      psca:
-        name: ca.infoway.io.psca
-        version: 2.0.3-DFT-Ballot
+#      psca:
+#        name: ca.infoway.io.psca
+#        version: 2.0.3-DFT-Ballot
       psca-211-dft:
         name: ca.infoway.io.psca
         version: 2.1.1-DFT
@@ -125,9 +125,9 @@ hapi:
       pson:
         name: ca.on.oh.patient-summary
         version: 0.11.0
-      erec:
-        name: ca.infoway.io.erec
-        version: 1.0.3-dft-projectathon
+#      erec:
+#        name: ca.infoway.io.erec
+#        version: 1.0.3-dft-projectathon
       erec120:
         name: ca.infoway.io.erec
         version: 1.2.0-dft
@@ -135,9 +135,9 @@ hapi:
         name: ca.on.oh-eReferral-eConsult
         version: 0.12.0-alpha1.0.7
         url: file:///app/igs/ca.on.oh-ereferral-econsult-0.12.0-alpha1.0.7-snapshots.tgz
-      cafex210:
-        name: ca.infoway.io.cafex
-        version: 2.1.0-DFT-preBallot
+#      cafex210:
+#        name: ca.infoway.io.cafex
+#        version: 2.1.0-DFT-preBallot
       cafex220:
         name: ca.infoway.io.cafex
         version: 2.2.0-DFT
