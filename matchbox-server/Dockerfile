@@ -22,6 +22,5 @@ COPY with-ca/ca.on.oh-ereferral-econsult-0.12.0-alpha1.0.7-snapshots.tgz igs
 
 USER matchbox
 
-ENTRYPOINT java -Xmx3072M -Dfhir.settings.path=config/fhir-settings.json -Dspring.config.additional-location=file:config/application.yaml -jar matchbox.jar
+ENTRYPOINT ["java", "-Xmx3072M", "-Dfhir.settings.path=config/fhir-settings.json", "-Dspring.config.additional-location=file:config/application.yaml", "-jar", "matchbox.jar"]
 
-# used by .github/workflows/
