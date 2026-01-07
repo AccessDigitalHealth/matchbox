@@ -1,3 +1,10 @@
+2026/01/07 Release 4.0.16
+
+- adapt test and map for (#440)
+- update org.hl7.fhir.core 6.7.10 (#448)
+- support validating CodeableConcept in internal tx (#448)
+- FHIR R4 validation error with R5 extension (#424)
+
 2025/11/03 Release 4.0.15
 
 - Upgrade Tomcat to fix [CVE-2025-55752](https://github.com/advisories/GHSA-wmwf-9ccg-fff5)
