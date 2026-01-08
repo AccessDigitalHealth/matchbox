@@ -24,7 +24,6 @@ matchbox:
           - "regex:ValueSet '(.+)' not found"
           - "regex:This element does not match any known slice defined in the profile (.*)"
           - "regex:Reference to draft CodeSystem (.+)"
-#          - "regex:A definition for CodeSystem '(.+)' could not be found, so the code cannot be validated"
           - "Best Practice Recommendation: In general, all observations should have a performer"
           - "Best Practice Recommendation: In general, all observations should have an effective[x] ()"
           - "regex:Validate Observation against (.+)"
