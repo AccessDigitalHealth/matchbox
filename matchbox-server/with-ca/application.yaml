@@ -24,7 +24,7 @@ matchbox:
           - "regex:ValueSet '(.+)' not found"
           - "regex:This element does not match any known slice defined in the profile (.*)"
           - "regex:Reference to draft CodeSystem (.+)"
-          - "regex:A definition for CodeSystem '(.+)' could not be found, so the code cannot be validated"
+#          - "regex:A definition for CodeSystem '(.+)' could not be found, so the code cannot be validated"
           - "Best Practice Recommendation: In general, all observations should have a performer"
           - "Best Practice Recommendation: In general, all observations should have an effective[x] ()"
           - "regex:Validate Observation against (.+)"
@@ -32,6 +32,7 @@ matchbox:
           - "regex:UCUM Codes that contain human readable annotations like (.+) can be misleading (.e.g. they are ignored when comparing units).(.+)"
           - "regex:A definition for the value Set '(.+)' could not be found"
           - "UNABLE_TO_CHECK_IF_THE_PROVIDED_CODES_ARE_IN_THE_VALUE_SET"
+          - "regex:No definition could be found for URL value '(.+)'"
         ca.ab.fhir.psab:
           - "Constraint failed: dom-6:"
           - "regex:URL value '(.+)' does not resolve"
@@ -46,6 +47,7 @@ matchbox:
           - "regex:UCUM Codes that contain human readable annotations like (.+) can be misleading (.e.g. they are ignored when comparing units).(.+)"
           - "regex:A definition for the value Set '(.+)' could not be found"
           - "UNABLE_TO_CHECK_IF_THE_PROVIDED_CODES_ARE_IN_THE_VALUE_SET"
+          - "regex:No definition could be found for URL value '(.+)'"
         ca.on.oh.patient-summary:
           - "Constraint failed: dom-6:"
           - "regex:URL value '(.+)' does not resolve"
