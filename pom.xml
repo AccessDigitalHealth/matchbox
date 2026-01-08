@@ -154,7 +154,7 @@
                         <groupId>commons-io</groupId>
                         <artifactId>commons-io</artifactId>
                     </exclusion>
-                </exclusions>    
+                </exclusions>
             </dependency>
             <dependency>
                 <groupId>ca.uhn.hapi.fhir</groupId>
