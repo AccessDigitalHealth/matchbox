@@ -1,9 +1,14 @@
-2026/01/07 Release 4.0.16
+2026/01/08 Release 4.0.16
 
 - adapt test and map for (#440)
 - update org.hl7.fhir.core 6.7.10 (#448)
 - support validating CodeableConcept in internal tx (#448)
 - FHIR R4 validation error with R5 extension (#424)
+- Fix THO loading: Unknown code '26' in the CodeSystem 'http://terminology.hl7.org/CodeSystem/object-role' version '4.0.1' (#452)
+- Remove auto install ig's (did not handle -ballot versions)
+- Use hl7.terminology#7.0.1 as FHIR Java validator 6.7.10 is doing (#452)
+
+NOTE: Remove in your installation existing classpath entries for hl7.terminology#x.x.x in application.yaml
 
 2025/11/03 Release 4.0.15
 
