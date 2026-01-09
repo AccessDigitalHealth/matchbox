@@ -8,7 +8,7 @@ matchbox:
   fhir:
     context:
       fhirVersion: 4.0.1
-      txServer: http://tx.fhir.org
+      txServer: https://terminologystandardsservice.ca/tx
       txServerCache: false
       onlyOneEngine: false
       suppressWarnInfo:
