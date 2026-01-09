@@ -65,7 +65,7 @@ matchbox:
 hapi:
   fhir:
     server_address: https://matchbox.apibox.ca/matchboxv3/fhir
-    staticLocation: file:/app/
+    staticLocation: file:/apps/
     implementationguides:
       fhir_r4_core:
         name: hl7.fhir.r4.core
