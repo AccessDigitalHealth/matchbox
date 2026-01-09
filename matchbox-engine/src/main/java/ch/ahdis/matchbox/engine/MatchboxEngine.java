@@ -99,8 +99,10 @@ import ch.ahdis.matchbox.mappinglanguage.TransformSupportServices;
 public class MatchboxEngine extends ValidationEngine {
 
 	// Current packages that are provided with Matchbox Engine
-	public static final String PACKAGE_R4_TERMINOLOGY = "hl7.terminology.r4#6.3.0";
-	public static final String PACKAGE_R5_TERMINOLOGY = "hl7.terminology.r5#6.3.0";
+	public static final String PACKAGE_R4_TERMINOLOGY = "hl7.terminology.r4#7.0.1";
+	public static final String PACKAGE_R5_TERMINOLOGY = "hl7.terminology.r5#7.0.1";
+	public static final String PACKAGE_R4_TERMINOLOGY63 = "hl7.terminology.r4#6.3.0";
+	public static final String PACKAGE_R5_TERMINOLOGY63 = "hl7.terminology.r5#6.3.0";
 	public static final String PACKAGE_R4_TERMINOLOGY65 = "hl7.terminology.r4#6.5.0";
 	public static final String PACKAGE_R5_TERMINOLOGY65 = "hl7.terminology.r5#6.5.0";
 	public static final String PACKAGE_R4_UV_EXTENSIONS = "hl7.fhir.uv.extensions.r4#5.2.0";
@@ -308,7 +310,7 @@ public class MatchboxEngine extends ValidationEngine {
 			}
 			engine.getContext().setPackageTracker(engine);
 			engine.setPcm(this.getFilesystemPackageCacheManager());
-			engine.setPolicyAdvisor(new ValidationPolicyAdvisor(ReferenceValidationPolicy.CHECK_VALID));
+			engine.setPolicyAdvisor(new ValidationPolicyAdvisor(ReferenceValidationPolicy.CHECK_VALID, null));
 			engine.setAllowExampleUrls(true);
 			log.info("engine R4 initialized");
 			return engine;
@@ -353,7 +355,7 @@ public class MatchboxEngine extends ValidationEngine {
 			}
 			engine.getContext().setPackageTracker(engine);
 			engine.setPcm(this.getFilesystemPackageCacheManager());
-			engine.setPolicyAdvisor(new ValidationPolicyAdvisor(ReferenceValidationPolicy.CHECK_VALID));
+			engine.setPolicyAdvisor(new ValidationPolicyAdvisor(ReferenceValidationPolicy.CHECK_VALID, null));
 			engine.setAllowExampleUrls(true);
 			log.info("engine R4B initialized");
 			return engine;
@@ -396,8 +398,7 @@ public class MatchboxEngine extends ValidationEngine {
 					throw new TerminologyServerException(e);
 				}
 			}
-
-			engine.setPolicyAdvisor(new ValidationPolicyAdvisor(ReferenceValidationPolicy.CHECK_VALID));
+			engine.setPolicyAdvisor(new ValidationPolicyAdvisor(ReferenceValidationPolicy.CHECK_VALID, null));
 			engine.setAllowExampleUrls(true);
 
 			engine.getContext().setPackageTracker(engine);
@@ -434,7 +435,7 @@ public class MatchboxEngine extends ValidationEngine {
 			}
 			engine.getContext().setPackageTracker(engine);
 			engine.setPcm(this.getFilesystemPackageCacheManager());
-			engine.setPolicyAdvisor(new ValidationPolicyAdvisor(ReferenceValidationPolicy.CHECK_VALID));
+			engine.setPolicyAdvisor(new ValidationPolicyAdvisor(ReferenceValidationPolicy.CHECK_VALID, null));
 			engine.setAllowExampleUrls(true);
 			return engine;
 		}
