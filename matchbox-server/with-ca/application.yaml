@@ -1,16 +1,6 @@
 server:
   servlet:
     context-path: /matchboxv3
-# spring:
-#   datasource:
-#     url: ''
-#     username: 
-#     password: 
-#     driverClassName: org.postgresql.Driver
-
-#     # database connection pool size
-#     hikari:
-#       maximum-pool-size: 10
   jpa:
     properties:
       hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -18,7 +8,8 @@ matchbox:
   fhir:
     context:
       fhirVersion: 4.0.1
-      txServer: http://tx.fhir.org
+      txServer: https://tx.fhir.org
+      txServerCache: false
       onlyOneEngine: false
       suppressWarnInfo:
         ca.infoway.io.erec:
@@ -33,7 +24,6 @@ matchbox:
           - "regex:ValueSet '(.+)' not found"
           - "regex:This element does not match any known slice defined in the profile (.*)"
           - "regex:Reference to draft CodeSystem (.+)"
-          - "regex:A definition for CodeSystem '(.+)' could not be found, so the code cannot be validated"
           - "Best Practice Recommendation: In general, all observations should have a performer"
           - "Best Practice Recommendation: In general, all observations should have an effective[x] ()"
           - "regex:Validate Observation against (.+)"
@@ -41,13 +31,14 @@ matchbox:
           - "regex:UCUM Codes that contain human readable annotations like (.+) can be misleading (.e.g. they are ignored when comparing units).(.+)"
           - "regex:A definition for the value Set '(.+)' could not be found"
           - "UNABLE_TO_CHECK_IF_THE_PROVIDED_CODES_ARE_IN_THE_VALUE_SET"
+          - "regex:No definition could be found for URL value '(.+)'"
+          - "regex:Reference to draft ValueSet (.+)"
         ca.ab.fhir.psab:
           - "Constraint failed: dom-6:"
           - "regex:URL value '(.+)' does not resolve"
           - "regex:ValueSet '(.+)' not found"
           - "regex:This element does not match any known slice defined in the profile (.*)"
           - "regex:Reference to draft CodeSystem (.+)"
-          - "regex:A definition for CodeSystem '(.+)' could not be found, so the code cannot be validated"
           - "Best Practice Recommendation: In general, all observations should have a performer"
           - "Best Practice Recommendation: In general, all observations should have an effective[x] ()"
           - "regex:Validate Observation against (.+)"
@@ -55,6 +46,8 @@ matchbox:
           - "regex:UCUM Codes that contain human readable annotations like (.+) can be misleading (.e.g. they are ignored when comparing units).(.+)"
           - "regex:A definition for the value Set '(.+)' could not be found"
           - "UNABLE_TO_CHECK_IF_THE_PROVIDED_CODES_ARE_IN_THE_VALUE_SET"
+          - "regex:No definition could be found for URL value '(.+)'"
+          - "regex:Reference to draft ValueSet (.+)"
         ca.on.oh.patient-summary:
           - "Constraint failed: dom-6:"
           - "regex:URL value '(.+)' does not resolve"
@@ -73,10 +66,12 @@ matchbox:
 hapi:
   fhir:
     server_address: https://matchbox.apibox.ca/matchboxv3/fhir
+    staticLocation: file:/apps/
     implementationguides:
       fhir_r4_core:
         name: hl7.fhir.r4.core
         version: 4.0.1
+        url: classpath:/hl7.fhir.r4.core.tgz
       fhir_terminology:
         name: hl7.terminology
         version: 5.4.0
@@ -113,9 +108,6 @@ hapi:
       pmir150:
         name: ihe.iti.pmir
         version: 1.5.0
-#      psca:
-#        name: ca.infoway.io.psca
-#        version: 2.0.3-DFT-Ballot
       psca-211-dft:
         name: ca.infoway.io.psca
         version: 2.1.1-DFT
@@ -125,9 +117,6 @@ hapi:
       pson:
         name: ca.on.oh.patient-summary
         version: 0.11.0
-#      erec:
-#        name: ca.infoway.io.erec
-#        version: 1.0.3-dft-projectathon
       erec120:
         name: ca.infoway.io.erec
         version: 1.2.0-dft
@@ -135,9 +124,6 @@ hapi:
         name: ca.on.oh-eReferral-eConsult
         version: 0.12.0-alpha1.0.7
         url: file:///app/igs/ca.on.oh-ereferral-econsult-0.12.0-alpha1.0.7-snapshots.tgz
-#      cafex210:
-#        name: ca.infoway.io.cafex
-#        version: 2.1.0-DFT-preBallot
       cafex220:
         name: ca.infoway.io.cafex
         version: 2.2.0-DFT

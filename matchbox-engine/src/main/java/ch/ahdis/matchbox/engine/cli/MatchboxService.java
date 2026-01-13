@@ -436,13 +436,14 @@ public class MatchboxService {
           } else {
             fetcher.setReferencePolicy(ReferenceValidationPolicy.IGNORE);
           }
+          fetcher.getCheckReferencesTo().addAll(validationContext.getCheckReferencesTo());
           fetcher.setResolutionContext(validationContext.getResolutionContext());
         } else {
           DisabledValidationPolicyAdvisor fetcher = new DisabledValidationPolicyAdvisor();
           validator.setPolicyAdvisor(fetcher);
           refpol = ReferenceValidationPolicy.CHECK_TYPE_IF_EXISTS;
       }
-      validator.getPolicyAdvisor().setPolicyAdvisor(new ValidationPolicyAdvisor(validator.getPolicyAdvisor() == null ? refpol : validator.getPolicyAdvisor().getReferencePolicy()));
+      validator.getPolicyAdvisor().setPolicyAdvisor(new ValidationPolicyAdvisor(validator.getPolicyAdvisor() == null ? refpol : validator.getPolicyAdvisor().getReferencePolicy(), validationContext.getCheckReferencesTo()));
       validator.getBundleValidationRules().addAll(validationContext.getBundleValidationRules());
       validator.setJurisdiction(CodeSystemUtilities.readCoding(validationContext.getJurisdiction()));
       

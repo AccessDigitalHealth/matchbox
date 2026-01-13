@@ -9,7 +9,7 @@
 
     <groupId>health.matchbox</groupId>
     <artifactId>matchbox</artifactId>
-    <version>4.0.15-Infoway</version>
+    <version>4.0.16-Infoway</version>
     <packaging>pom</packaging>
     <name>matchbox</name>
     <description>An open-source implementation to support testing and implementation of FHIR based solutions and map or
@@ -40,7 +40,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <maven.compiler.release>21</maven.compiler.release>
 
-        <fhir.core.version>6.6.5</fhir.core.version>
+        <fhir.core.version>6.7.10</fhir.core.version>
         <hapi.fhir.version>8.0.0</hapi.fhir.version>
 
 
@@ -505,21 +505,6 @@
                 <artifactId>tomcat-embed-websocket</artifactId>
                 <version>${tomcat_embed_version}</version>
             </dependency>
-
-<!--            <dependency>-->
-<!--                &lt;!&ndash; Upgrading because of CVE-2023-52428-->
-<!--                (https://security.snyk.io/vuln/SNYK-JAVA-COMNIMBUSDS-6247633) &ndash;&gt;-->
-<!--                <groupId>com.nimbusds</groupId>-->
-<!--                <artifactId>nimbus-jose-jwt</artifactId>-->
-<!--                <version>9.37.3</version>-->
-<!--            </dependency>-->
-<!--            <dependency>-->
-<!--                &lt;!&ndash; Upgrading because of CVE-2023-4043-->
-<!--                (https://nvd.nist.gov/vuln/detail/CVE-2023-4043) &ndash;&gt;-->
-<!--                <groupId>org.eclipse.parsson</groupId>-->
-<!--                <artifactId>parsson</artifactId>-->
-<!--                <version>1.0.4</version>-->
-<!--            </dependency>-->
 
             <dependency>
                 <groupId>com.squareup.okhttp3</groupId>

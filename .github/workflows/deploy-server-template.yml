@@ -94,13 +94,13 @@ jobs:
       - name: Upload Dockerrun.aws.json
         uses: actions/upload-artifact@v4
         with:
-          name: matchbox-server-artifact
+          name: matchbox-server-artifact.zip
           path: Dockerrun.aws.json
 
       - name: Zip deployment bundle
         run: |
           cat Dockerrun.aws.json
-          zip -r "${{ env.ZIP_FILE }}" Dockerrun.aws.json
+          zip -r "${{ env.ZIP_FILE }}" Dockerrun.aws.json .platform/
 
       - name: Cache Maven packages
         uses: actions/cache@v4
