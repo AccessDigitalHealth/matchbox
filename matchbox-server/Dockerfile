@@ -22,5 +22,5 @@ COPY with-ca/ca.on.oh-ereferral-econsult-0.12.0-alpha1.0.7-snapshots.tgz igs
 
 USER matchbox
 
-ENTRYPOINT ["java", "-Xmx8192M", "-Dfhir.settings.path=config/fhir-settings.json", "-Dspring.config.additional-location=file:config/application.yaml", "-jar", "matchbox.jar"]
+ENTRYPOINT ["java", "-Xms14g", "-Xmx14g", "-Dfhir.settings.path=config/fhir-settings.json", "-Dspring.config.additional-location=file:config/application.yaml", "-jar", "matchbox.jar"]
 
