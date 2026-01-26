@@ -2,11 +2,11 @@ server:
   servlet:
     context-path: /matchboxv3
 spring:
-  datasource:
-    url: "jdbc:postgresql://ps-ca-hapi-fhir-db-dev.ccq3yll5qome.ca-central-1.rds.amazonaws.com:5432/matchbox"
-    username: matchbox
-    password: matchbox
-    driverClassName: org.postgresql.Driver
+#  datasource:
+#    url: "jdbc:postgresql://ps-ca-hapi-fhir-db-dev.ccq3yll5qome.ca-central-1.rds.amazonaws.com:5432/matchbox"
+#    username: matchbox
+#    password: matchbox
+#    driverClassName: org.postgresql.Driver
   jpa:
     properties:
       hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
