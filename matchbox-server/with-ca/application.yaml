@@ -7,9 +7,9 @@ spring:
 #    username: matchbox
 #    password: matchbox
 #    driverClassName: org.postgresql.Driver
-  jpa:
-    properties:
-      hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
+#  jpa:
+#    properties:
+#      hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
 matchbox:
   fhir:
     context:
