@@ -5,7 +5,6 @@ spring:
   datasource:
     url: "jdbc:postgresql://ps-ca-hapi-fhir-db-dev.ccq3yll5qome.ca-central-1.rds.amazonaws.com:5432/matchbox-v4"
     username: matchbox
-    password: matchbox
     driverClassName: org.postgresql.Driver
   jpa:
     properties:
@@ -13,10 +12,14 @@ spring:
 matchbox:
   fhir:
     context:
+      extensions: any
       fhirVersion: 4.0.1
-      txServer: https://terminologystandardsservice.ca/tx/fhir
-      txServerCache: false
+      txServer: https://tx.fhir.org
+      txServerCache: true
       onlyOneEngine: false
+      suppressError:
+        hl7.fhir.r4.core#4.0.1:
+          - "Extension_EXT_Unknown_NotHere@^.*extension.*"
       suppressWarnInfo:
         ca.infoway.io.erec:
           - "Constraint failed: dom-6:"
@@ -93,18 +96,12 @@ hapi:
       hl7-terminology-r4:
         name: hl7.terminology.r4
         version: 6.0.2
-#      ips110:
-#        name: hl7.fhir.uv.ips
-#        version: 1.1.0
       ips200bt:
         name: hl7.fhir.uv.ips
         version: 2.0.0-ballot
       mhd422:
         name: ihe.iti.mhd
         version: 4.2.2
-#      mhd410:
-#        name: ihe.iti.mhd
-#        version: 4.1.0
       pixm300:
         name: ihe.iti.pixm
         version: 3.0.0
