@@ -14,7 +14,7 @@ matchbox:
   fhir:
     context:
       fhirVersion: 4.0.1
-      txServer: https://tx.fhir.org
+      txServer: https://terminologystandardsservice.ca/tx/fhir
       txServerCache: false
       onlyOneEngine: false
       suppressWarnInfo:
