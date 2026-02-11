@@ -1,3 +1,10 @@
+logging:
+  level:
+    root: INFO
+    ca.uhn.fhir.jpa.term: DEBUG
+    org.hl7.fhir.r5.terminologies: DEBUG
+    org.apache.http.wire: TRACE
+    org.apache.http: TRACE
 server:
   servlet:
     context-path: /matchboxv3
@@ -14,7 +21,7 @@ matchbox:
     context:
       extensions: any
       fhirVersion: 4.0.1
-      txServer: https://tx.fhir.org
+      txServer: https://terminologystandardsservice.ca/tx/fhir
       txServerCache: true
       onlyOneEngine: false
       suppressError:
