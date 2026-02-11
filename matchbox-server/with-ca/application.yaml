@@ -22,7 +22,7 @@ matchbox:
       extensions: any
       fhirVersion: 4.0.1
       txServer: https://terminologystandardsservice.ca/tx/fhir
-      txServerCache: true
+      txServerCache: false
       onlyOneEngine: false
       suppressError:
         hl7.fhir.r4.core#4.0.1:
