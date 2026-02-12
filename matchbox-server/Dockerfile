@@ -16,6 +16,7 @@ ENV HOME=/home/matchbox
 RUN mkdir -p database && chown matchbox:matchbox database
 RUN mkdir -p config && chown matchbox:matchbox config
 RUN chown matchbox:matchbox /app
+
 COPY with-ca/application.yaml config
 COPY with-ca/fhir-settings.json config
 COPY with-ca/ca.on.oh-ereferral-econsult-0.12.0-alpha1.0.7-snapshots.tgz igs

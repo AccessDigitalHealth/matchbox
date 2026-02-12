@@ -433,7 +433,7 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
       oidSources.addAll(other.oidSources);
       oidCacheManual.putAll(other.oidCacheManual);
       validationCache.putAll(other.validationCache);
-      tlogging = other.tlogging;
+      tlogging = true;
       locator = other.locator;
       userAgent = other.userAgent;
       terminologyClientManager.copy(other.terminologyClientManager);
@@ -919,7 +919,7 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
   }
 
   protected void txLog(String msg) {
-    if (tlogging ) {
+    if (tlogging) {
         logger.logDebugMessage(LogCategory.TX, msg);
     }
   }
@@ -1824,7 +1824,7 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
     Set<String> systems = findRelevantSystems(code, vs);
     TerminologyClientContext tc = terminologyClientManager.chooseServer(vs, systems, false);
 
-    txLog("$validate "+txCache.summary(code)+" for "+ txCache.summary(vs)+" on "+tc.getAddress());
+    txLog("$validate [" + code + "]: " +txCache.summary(code)+" for "+ txCache.summary(vs)+" on "+tc.getAddress());
     try {
       Parameters pIn = constructParameters(options, code);
       res = validateOnServer2(tc, vs, pIn, options, systems);

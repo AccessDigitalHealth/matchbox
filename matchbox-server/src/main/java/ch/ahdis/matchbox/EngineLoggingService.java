@@ -12,7 +12,7 @@ public class EngineLoggingService implements ILoggingService {
   private final boolean debug;
 
   public EngineLoggingService() {
-	  debug = false;
+	  debug = true;
 //    this(false);
   }
 
@@ -23,8 +23,11 @@ public class EngineLoggingService implements ILoggingService {
 
   @Override
   public void logDebugMessage(LogCategory category, String message) {
-    if (debug) {
-        log.debug(" -" + category.name().toLowerCase() + ": " + message);
+	 if (LogCategory.TX.equals(category)) {
+		 log.debug(" -" + category.name().toLowerCase() + ": " + message);
+	 }
+    else if (debug) {
+		 log.debug(" -" + category.name().toLowerCase() + ": " + message);
     }
   }
 

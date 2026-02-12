@@ -1,6 +1,7 @@
 logging:
   level:
     root: INFO
+    ch.ahdis.matchbox: DEBUG
     ca.uhn.fhir.jpa.term: DEBUG
     org.hl7.fhir.r5.terminologies: DEBUG
     org.apache.http.wire: TRACE
@@ -20,9 +21,11 @@ matchbox:
   fhir:
     context:
       extensions: any
+      doDebug: true
       fhirVersion: 4.0.1
-      txServer: https://terminologystandardsservice.ca/tx/fhir
+      txServer: https://tx.fhir.org
       txServerCache: false
+      txLog: .log
       onlyOneEngine: false
       suppressError:
         hl7.fhir.r4.core#4.0.1:
