@@ -167,6 +167,7 @@ hapi:
       csd111_dft:
         name: ca.infoway.io.ca-csd
         version: 1.1.1-dft-preBallot
+        packageUrl: file:///app/igs/ca.infoway.io.ca-csd-1.1.1-dft-preballot-snapshots.tgz
       ca_core_110-dft:
         name: ca.infoway.io.core
         version: 1.1.0-dft-preballot
