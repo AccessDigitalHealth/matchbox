@@ -19,7 +19,7 @@ RUN chown matchbox:matchbox /app
 COPY with-ca/application.yaml config
 COPY with-ca/fhir-settings.json config
 COPY with-ca/ca.on.oh-ereferral-econsult-0.12.0-alpha1.0.7-snapshots.tgz igs
-#COPY with-ca/hl7.fhir.ca.baseline-1.0.tgz igs
+COPY with-ca/hl7.fhir.ca.baseline-1.0.tgz igs
 COPY with-ca/hl7.fhir.uv.subscriptions-backport.r4-1.2.0-ballot.tgz igs
 COPY with-ca/ca.infoway.io.halo-1.1.1-dft-preballot-snapshots.tgz igs
 

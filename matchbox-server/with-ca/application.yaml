@@ -5,6 +5,7 @@ spring:
   datasource:
     url: "jdbc:postgresql://ps-ca-hapi-fhir-db-dev.ccq3yll5qome.ca-central-1.rds.amazonaws.com:5432/matchbox-v4"
     username: matchbox
+    password: matchbox
     driverClassName: org.postgresql.Driver
   jpa:
     properties:
@@ -84,7 +85,7 @@ hapi:
         version: 6.5.0
       cabase100:
         name: hl7.fhir.ca.baseline
-        version: 1.0.0
+        version: 1.0
         url: file:///app/igs/hl7.fhir.ca.baseline-1.0.tgz
       fhir_extensions:
         name: hl7.fhir.uv.extensions.r4
@@ -168,17 +169,14 @@ hapi:
         version: 0.11.0
       csd111_dft:
         name: ca.infoway.io.ca-csd
-        version: 1.1.2-dft-preBallot
+        version: 1.1.1-dft-preBallot
       ca_core_110-dft:
         name: ca.infoway.io.core
         version: 1.1.0-dft-preballot
 #      ca_halo_111:
 #        name: ca.infoway.io.halo
 #        version: 1.1.1-dft-preballot
-      halo:
-        # As of 2025-10-09 (1.1.0-dft-preballot), the HALO package isn't compatible with HAPI JPA. (See: https://informs.infoway-inforoute.ca/browse/PCH-529)
-        # To account for this, we've downloaded the package, unpacked it, corrected the structural issues, and then repacked it.
-        packageUrl: file:///app/igs/ca.infoway.io.halo-1.1.1-dft-preballot-snapshots.tgz
+      halo111:
         name: ca.infoway.io.halo
         version: 1.1.1-dft-preballot
         allowed_bundle_types: COLLECTION,DOCUMENT,MESSAGE,TRANSACTION,TRANSACTIONRESPONSE,BATCH,BATCHRESPONSE,HISTORY,SEARCHSET
