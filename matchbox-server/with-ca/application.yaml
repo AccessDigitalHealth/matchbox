@@ -16,10 +16,13 @@ matchbox:
       fhirVersion: 4.0.1
       txServer: https://tx.fhir.org
       txServerCache: true
+      txLog: tx-log.log
       onlyOneEngine: false
+      doDebug: true
       suppressError:
         hl7.fhir.r4.core#4.0.1:
           - "Extension_EXT_Unknown_NotHere@^.*extension.*"
+          - "Type_Specific_Checks_DT_URL_Resolve"
       suppressWarnInfo:
         ca.infoway.io.erec:
           - "Constraint failed: dom-6:"
@@ -77,25 +80,32 @@ hapi:
     server_address: https://dev-matchbox.apibox.ca/matchboxv3/fhir
     staticLocation: file:/apps/
     implementationguides:
-      fhir_r4_core:
-        name: hl7.fhir.r4.core
-        version: 4.0.1
-        url: classpath:/hl7.fhir.r4.core.tgz
       fhir_terminology:
         name: hl7.terminology
         version: 5.4.0
+      hl7-terminology-r4:
+        name: hl7.terminology.r4
+        version: 6.5.0
       fhir_extensions:
         name: hl7.fhir.uv.extensions.r4
         version: 1.0.0
+      hl7-fhir-extension-r4:
+        name: hl7.fhir.uv.extensions.r4
+        version: 5.2.0
+      fhir_r4_core:
+        name: hl7.fhir.r4.core
+        version: 4.0.1
+        # url: classpath:/hl7.fhir.r4.core.tgz
+      uscore801:
+        name: hl7.fhir.us.core
+        version: 8.0.1
+      cabase100:
+        name: hl7.fhir.ca.baseline
+        version: 1.0
+        url: file:///app/igs/hl7.fhir.ca.baseline-1.0.tgz
       fhir-baseline-1-1-8:
         name: hl7.fhir.ca.baseline
         version: 1.1.8
-      hl7-fhir-extension-r4:
-        name: hl7.fhir.uv.extensions.r4
-        version: 5.1.0
-      hl7-terminology-r4:
-        name: hl7.terminology.r4
-        version: 6.0.2
       ips200bt:
         name: hl7.fhir.uv.ips
         version: 2.0.0-ballot
@@ -130,12 +140,6 @@ hapi:
       cafex220:
         name: ca.infoway.io.cafex
         version: 2.2.0-DFT
-      cabase118:
-        name: hl7.fhir.ca.baseline
-        version: 1.1.8
-      uscore610:
-        name: hl7.fhir.us.core
-        version: 6.1.0
       bulkdata200:
         name: hl7.fhir.uv.bulkdata
         version: 2.0.0
@@ -148,9 +152,6 @@ hapi:
       smart210:
         name: hl7.fhir.uv.smart-app-launch
         version: 2.1.0
-      term540:
-        name: hl7.terminology
-        version: 5.4.0
       format120:
         name: ihe.formatcode.fhir
         version: 1.2.0
@@ -169,6 +170,14 @@ hapi:
       ca_core_110-dft:
         name: ca.infoway.io.core
         version: 1.1.0-dft-preballot
-      ca_halo_111:
+      halo111:
         name: ca.infoway.io.halo
         version: 1.1.1-dft-preballot
+        allowed_bundle_types: COLLECTION,DOCUMENT,MESSAGE,TRANSACTION,TRANSACTIONRESPONSE,BATCH,BATCHRESPONSE,HISTORY,SEARCHSET
+      subscriptions-r5-backport:
+        # You have to use a local copy of the package. Only the R4B version is available on the FHIR IG registry, which won't work with R4.
+        # This was downloaded using the "R4-Specific Package" option on https://build.fhir.org/ig/HL7/fhir-subscription-backport-ig/downloads.html
+        packageUrl: file:///app/igs/hl7.fhir.uv.subscriptions-backport.r4-1.2.0-ballot.tgz
+        name: hl7.fhir.uv.subscriptions-backport.r4
+        version: 1.2.0-ballot
+        allowed_bundle_types: COLLECTION,DOCUMENT,MESSAGE,TRANSACTION,TRANSACTIONRESPONSE,BATCH,BATCHRESPONSE,HISTORY,SEARCHSET
