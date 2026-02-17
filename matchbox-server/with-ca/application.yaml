@@ -22,6 +22,7 @@ matchbox:
       suppressError:
         hl7.fhir.r4.core#4.0.1:
           - "Extension_EXT_Unknown_NotHere@^.*extension.*"
+          - "Type_Specific_Checks_DT_URL_Resolve"
       suppressWarnInfo:
         ca.infoway.io.erec:
           - "Constraint failed: dom-6:"
