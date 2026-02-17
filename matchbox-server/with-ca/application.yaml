@@ -135,7 +135,7 @@ hapi:
         version: 1.1.8
       uscore610:
         name: hl7.fhir.us.core
-        version: 6.1.0
+        version: 8.0.1
       bulkdata200:
         name: hl7.fhir.uv.bulkdata
         version: 2.0.0
