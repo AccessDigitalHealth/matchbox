@@ -68,6 +68,8 @@ import org.hl7.fhir.r5.extensions.ExtensionDefinitions;
 import org.hl7.fhir.r5.extensions.ExtensionUtilities;
 import org.hl7.fhir.r5.model.ActorDefinition;
 import org.hl7.fhir.r5.model.BooleanType;
+import org.hl7.fhir.r5.model.Bundle;
+import org.hl7.fhir.r5.model.Bundle.BundleEntryComponent;
 import org.hl7.fhir.r5.model.CanonicalResource;
 import org.hl7.fhir.r5.model.CanonicalType;
 import org.hl7.fhir.r5.model.CapabilityStatement;
@@ -156,6 +158,7 @@ import com.google.gson.JsonObject;
 @MarkedToMoveToAdjunctPackage
 public abstract class BaseWorkerContext extends I18nBase implements IWorkerContext, IWorkerContextManager, IOIDServices {
   private static boolean allowedToIterateTerminologyResources;
+  private static final String INFOWAY_TS_HOST = "terminologystandardsservice.ca";
 
 
   public interface IByteProvider {
@@ -1679,10 +1682,12 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
   }
 
   protected ValueSetValidator constructValueSetCheckerSimple(ValidationOptions options,  ValueSet vs,  ValidationContextCarrier ctxt) {
+    cacheRequiredSupplements(vs);
     return new ValueSetValidator(this, new TerminologyOperationContext(this, options, "validation"), options, vs, ctxt, getExpansionParameters(), terminologyClientManager, registry);
   }
 
   protected ValueSetValidator constructValueSetCheckerSimple( ValidationOptions options,  ValueSet vs) {
+    cacheRequiredSupplements(vs);
     return new ValueSetValidator(this, new TerminologyOperationContext(this, options, "validation"), options, vs, getExpansionParameters(), terminologyClientManager, registry);
   }
 
@@ -2007,6 +2012,7 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
 
   private boolean addDependentResources(ValueSetProcessBase.TerminologyOperationDetails opCtxt, TerminologyClientContext tc, Parameters pin, ValueSet vs) {
     boolean cache = false;
+    cache = addRequiredSupplements(opCtxt, tc, pin, vs) || cache;
     for (ConceptSetComponent inc : vs.getCompose().getInclude()) {
       cache = addDependentResources(opCtxt, tc, pin, inc, vs) || cache;
     }
@@ -2020,20 +2026,19 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
     boolean cache = false;
     for (CanonicalType c : inc.getValueSet()) {
       ValueSet vs = fetchResource(ValueSet.class, c.getValue(), null, src);
-      if (vs != null && !hasCanonicalResource(pin, "tx-resource", vs.getVUrl())) {
-        cache = checkAddToParams(tc, pin, vs) || cache;
-        addDependentResources(opCtxt, tc, pin, vs);
-        for (Extension ext : vs.getExtensionsByUrl(ExtensionDefinitions.EXT_VS_CS_SUPPL_NEEDED)) {
-          if (ext.hasValueCanonicalType()) {
-            String url = ext.getValueCanonicalType().asStringValue();
-            CodeSystem supp = fetchResource(CodeSystem.class, url);
-            if (supp != null) {
-              if (opCtxt != null) {
-                opCtxt.seeSupplement(supp);
-              }
-              cache = checkAddToParams(tc, pin, supp) || cache;            
-            }
+      if (vs != null) {
+        boolean processedDependencies = false;
+        if (!hasCanonicalResource(pin, "tx-resource", vs.getVUrl())) {
+          if (shouldOmitTxResourceForTsValueSet(tc, vs)) {
+            logger.logDebugMessage(LogCategory.CONTEXT, "tx-resource skipped; resolving ValueSet on TS: "+vs.getVUrl());
+          } else {
+            cache = checkAddToParams(tc, pin, vs) || cache;
+            cache = addDependentResources(opCtxt, tc, pin, vs) || cache;
+            processedDependencies = true;
           }
+        }
+        if (!processedDependencies) {
+          cache = addRequiredSupplements(opCtxt, tc, pin, vs) || cache;
         }
       }
     }
@@ -2082,6 +2087,122 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
       }
     }
     return cache;
+  }
+
+  private boolean addRequiredSupplements(ValueSetProcessBase.TerminologyOperationDetails opCtxt, TerminologyClientContext tc, Parameters pin, ValueSet vs) {
+    boolean cache = false;
+    if (vs == null) {
+      return false;
+    }
+    for (Extension ext : vs.getExtensionsByUrl(ExtensionDefinitions.EXT_VS_CS_SUPPL_NEEDED)) {
+      String canonical = getSupplementCanonical(ext);
+      if (Utilities.noString(canonical)) {
+        continue;
+      }
+      addUseSupplementParameter(pin, canonical);
+      if (opCtxt != null) {
+        opCtxt.seeSupplement(toSupplementIdentity(canonical));
+      }
+      CodeSystem supp = resolveRequiredSupplement(ext);
+      if (supp != null && !hasCanonicalResource(pin, "tx-resource", supp.getVUrl())) {
+        if (opCtxt != null) {
+          opCtxt.seeSupplement(supp);
+        }
+        cache = checkAddToParams(tc, pin, supp) || cache;
+      }
+    }
+    return cache;
+  }
+
+  private CodeSystem toSupplementIdentity(String canonical) {
+    CodeSystem supp = new CodeSystem();
+    if (Utilities.noString(canonical)) {
+      return supp;
+    }
+    int versionSeparator = canonical.lastIndexOf("|");
+    if (versionSeparator > -1) {
+      supp.setUrl(canonical.substring(0, versionSeparator));
+      supp.setVersion(canonical.substring(versionSeparator + 1));
+    } else {
+      supp.setUrl(canonical);
+    }
+    return supp;
+  }
+
+  private void addUseSupplementParameter(Parameters pin, String canonical) {
+    if (pin == null || Utilities.noString(canonical) || hasPrimitiveParameter(pin, "useSupplement", canonical)) {
+      return;
+    }
+    pin.addParameter().setName("useSupplement").setValue(new CanonicalType(canonical));
+  }
+
+  private boolean hasPrimitiveParameter(Parameters pin, String name, String value) {
+    if (pin == null) {
+      return false;
+    }
+    for (ParametersParameterComponent p : pin.getParameter()) {
+      if (name.equals(p.getName()) && p.hasValuePrimitive() && value.equals(p.getValue().primitiveValue())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private CodeSystem resolveRequiredSupplement(Extension ext) {
+    String canonical = getSupplementCanonical(ext);
+    if (Utilities.noString(canonical)) {
+      return null;
+    }
+    String url = canonical;
+    String version = null;
+    int versionSeparator = canonical.lastIndexOf("|");
+    if (versionSeparator > -1) {
+      url = canonical.substring(0, versionSeparator);
+      version = canonical.substring(versionSeparator + 1);
+    }
+    return Utilities.noString(version) ? findTxResource(CodeSystem.class, url) : findTxResource(CodeSystem.class, url, version);
+  }
+
+  private String getSupplementCanonical(Extension ext) {
+    if (ext == null || !ext.hasValueCanonicalType()) {
+      return null;
+    }
+    return ext.getValueCanonicalType().asStringValue();
+  }
+
+  private boolean shouldOmitTxResourceForTsValueSet(TerminologyClientContext tc, ValueSet vs) {
+    return shouldOmitTxResourceForTsValueSet(tc == null ? null : tc.getAddress(), vs, valueSetExistsOnceOnTerminologyServer(tc, vs));
+  }
+
+  static boolean shouldOmitTxResourceForTsValueSet(String txAddress, ValueSet vs, boolean exactlyOneMatchOnTs) {
+    return isInfowayTsServer(txAddress)
+        && vs != null
+        && exactlyOneMatchOnTs;
+  }
+
+  private boolean valueSetExistsOnceOnTerminologyServer(TerminologyClientContext tc, ValueSet vs) {
+    if (tc == null || tc.getClient() == null || vs == null || Utilities.noString(vs.getUrl())) {
+      return false;
+    }
+    try {
+      Bundle bnd = tc.getClient().search("ValueSet", valueSetSearchCriteria(vs));
+      return bnd != null && bnd.getEntry().size() == 1;
+    } catch (Exception e) {
+      logger.logDebugMessage(LogCategory.TX, "Error checking ValueSet on terminology server: "+vs.getVUrl()+" - "+e.getMessage());
+      return false;
+    }
+  }
+
+  private String valueSetSearchCriteria(ValueSet vs) {
+    return "?_format=json&url="+Utilities.URLEncode(vs.getUrl());
+  }
+
+  static boolean isInfowayTsServer(String txAddress) {
+    if (txAddress == null) {
+      return false;
+    }
+    String address = txAddress.toLowerCase(Locale.ROOT);
+    return address.contains(INFOWAY_TS_HOST);
   }
 
   private String getFixedVersion(String sys, Parameters pin) {
@@ -2294,6 +2415,67 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
   public void setLogger(@Nonnull org.hl7.fhir.r5.context.ILoggingService logger) {
     this.logger = logger;
     getTxClientManager().setLogger(logger);
+  }
+
+  public ToolingClientLogger getTxClientLogger() {
+    return txLog;
+  }
+
+  public void setTxClientLogger(ToolingClientLogger txLog) {
+    this.txLog = txLog;
+    getTxClientManager().setLogger(txLog);
+  }
+
+  public void addTxClientLogger(ToolingClientLogger logger) {
+    if (logger == null) {
+      return;
+    }
+    if (txLog == null) {
+      setTxClientLogger(logger);
+    } else {
+      setTxClientLogger(new CompositeToolingClientLogger(txLog, logger));
+    }
+  }
+
+  private static class CompositeToolingClientLogger implements ToolingClientLogger {
+
+    private final ToolingClientLogger[] loggers;
+
+    private CompositeToolingClientLogger(ToolingClientLogger... loggers) {
+      this.loggers = loggers;
+    }
+
+    @Override
+    public void logRequest(String method, String url, List<String> headers, byte[] body) {
+      for (ToolingClientLogger logger : loggers) {
+        logger.logRequest(method, url, headers, body);
+      }
+    }
+
+    @Override
+    public void logResponse(String outcome, List<String> headers, byte[] body, long start) {
+      for (ToolingClientLogger logger : loggers) {
+        logger.logResponse(outcome, headers, body, start);
+      }
+    }
+
+    @Override
+    public String getLastId() {
+      for (int i = loggers.length - 1; i >= 0; i--) {
+        String lastId = loggers[i].getLastId();
+        if (lastId != null) {
+          return lastId;
+        }
+      }
+      return null;
+    }
+
+    @Override
+    public void clearLastId() {
+      for (ToolingClientLogger logger : loggers) {
+        logger.clearLastId();
+      }
+    }
   }
 
   /**
@@ -3629,14 +3811,19 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
         return null;
       } else {
         cacheResource(svs.getVs());
+        cacheRequiredSupplements(svs.getVs());
         return (T) svs.getVs();
       }
     } else if (class_ == CodeSystem.class) {
       SourcedCodeSystem scs = null;
       if (txCache.hasCodeSystem(canonical)) {
         scs = txCache.getCodeSystem(canonical);
-      } else {
+      }
+      if (scs == null) {
         scs = terminologyClientManager.findCodeSystemOnServer(canonical);
+        if (scs == null) {
+          scs = findCodeSystemDirectlyOnServer(canonical);
+        }
         txCache.cacheCodeSystem(canonical, scs);
       }
       if (scs != null) {
@@ -3655,6 +3842,87 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
       }
     } else {
       throw new Error("Not supported: doFindTxResource with type of "+class_.getName());
+    }
+  }
+
+  private void cacheRequiredSupplements(ValueSet vs) {
+    cacheRequiredSupplements(vs, new HashSet<>());
+  }
+
+  private void cacheRequiredSupplements(ValueSet vs, Set<String> visited) {
+    if (vs == null) {
+      return;
+    }
+    String key = vs.getVUrl();
+    if (!Utilities.noString(key) && !visited.add(key)) {
+      return;
+    }
+    for (Extension ext : vs.getExtensionsByUrl(ExtensionDefinitions.EXT_VS_CS_SUPPL_NEEDED)) {
+      String canonical = getSupplementCanonical(ext);
+      if (!Utilities.noString(canonical) && fetchResource(CodeSystem.class, canonical) == null) {
+        SourcedCodeSystem scs = findCodeSystemDirectlyOnServer(canonical);
+        if (scs != null && scs.getCs() != null) {
+          cacheResource(scs.getCs());
+          txCache.cacheCodeSystem(canonical, scs);
+        }
+      }
+    }
+    if (vs.hasCompose()) {
+      cacheRequiredSupplements(vs, vs.getCompose().getInclude(), visited);
+      cacheRequiredSupplements(vs, vs.getCompose().getExclude(), visited);
+    }
+  }
+
+  private void cacheRequiredSupplements(Resource src, List<ConceptSetComponent> components, Set<String> visited) {
+    for (ConceptSetComponent inc : components) {
+      for (CanonicalType c : inc.getValueSet()) {
+        ValueSet vs = fetchResource(ValueSet.class, c.getValue(), null, src);
+        cacheRequiredSupplements(vs, visited);
+      }
+    }
+  }
+
+  private SourcedCodeSystem findCodeSystemDirectlyOnServer(String canonical) {
+    if (terminologyClientManager == null || !terminologyClientManager.hasClient() || Utilities.noString(canonical)) {
+      return null;
+    }
+    try {
+      TerminologyClientContext client = terminologyClientManager.chooseServer(canonical, false);
+      String url = canonical;
+      String version = null;
+      int versionSeparator = canonical.lastIndexOf("|");
+      if (versionSeparator > -1) {
+        url = canonical.substring(0, versionSeparator);
+        version = canonical.substring(versionSeparator + 1);
+      }
+      String criteria = "?_format=json&url="+Utilities.URLEncode(url);
+      if (!Utilities.noString(version)) {
+        criteria = criteria + "&version="+Utilities.URLEncode(version);
+      }
+      Bundle bnd = client.getClient().search("CodeSystem", criteria);
+      String rid = null;
+      if (bnd.getEntry().size() > 1) {
+        List<CodeSystem> cslist = new ArrayList<>();
+        for (BundleEntryComponent be : bnd.getEntry()) {
+          if (be.hasResource() && be.getResource() instanceof CodeSystem) {
+            cslist.add((CodeSystem) be.getResource());
+          }
+        }
+        if (!cslist.isEmpty()) {
+          Collections.sort(cslist, new CodeSystemUtilities.CodeSystemSorter());
+          rid = cslist.get(cslist.size()-1).getIdBase();
+        }
+      } else if (bnd.getEntry().size() == 1 && bnd.getEntryFirstRep().hasResource() && bnd.getEntryFirstRep().getResource() instanceof CodeSystem) {
+        rid = bnd.getEntryFirstRep().getResource().getIdBase();
+      }
+      if (rid == null) {
+        return null;
+      }
+      CodeSystem cs = (CodeSystem) client.getClient().read("CodeSystem", rid);
+      return new SourcedCodeSystem(client.getAddress(), cs);
+    } catch (Exception e) {
+      logger.logDebugMessage(LogCategory.TX, "Error resolving CodeSystem directly on terminology server: "+canonical+" - "+e.getMessage());
+      return null;
     }
   }
 
