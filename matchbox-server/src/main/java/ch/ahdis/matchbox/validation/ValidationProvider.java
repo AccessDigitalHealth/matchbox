@@ -83,7 +83,6 @@ import static ch.ahdis.matchbox.util.MatchboxServerUtils.addExtension;
 public class ValidationProvider {
 
 	private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ValidationProvider.class);
-	private static final String INFOWAY_TS_HOST = "terminologystandardsservice.ca";
 
 	@Autowired
 	protected MatchboxEngineSupport matchboxEngineSupport;
@@ -231,7 +230,6 @@ public class ValidationProvider {
 			log.error("Error during validation", e);
 			return this.getOoForError("Error during validation: %s".formatted(e.getMessage()));
 		}
-		filterTsSupplementFalsePositives(messages);
 
 		long millis = sw.getMillis();
 		log.debug("Validation time: {}", sw);
@@ -276,38 +274,6 @@ public class ValidationProvider {
 			default -> throw new MatchboxUnsupportedFhirVersionException("ValidationProvider",
 																							 this.myContext.getVersion().getVersion());
 		};
-	}
-
-	void filterTsSupplementFalsePositives(final List<ValidationMessage> messages) {
-		if (!isInfowayTsServer()) {
-			return;
-		}
-		messages.removeIf(this::isTsSupplementFalsePositive);
-	}
-
-	boolean isTsSupplementFalsePositive(final ValidationMessage message) {
-		if (message == null || message.getMessage() == null) {
-			return false;
-		}
-		return isTsSupplementFalsePositive(message.getMessage());
-	}
-
-	boolean isTsSupplementFalsePositive(final String text) {
-		if (text == null) {
-			return false;
-		}
-		return text.contains("Required supplement not found: https://fhir.infoway-inforoute.ca/CodeSystem/Supplement/fr-CA/task-status|1.0.0")
-			|| (text.contains("None of the codings provided are in the value set 'ReferralBusinessStatus'")
-				&& text.contains("https://fhir.infoway-inforoute.ca/ValueSet/ca-referralbusinessstatus|1.2.0")
-				&& text.contains("http://hl7.org/fhir/task-status#requested"));
-	}
-
-	boolean isInfowayTsServer() {
-		if (cliContext == null || cliContext.getTxServer() == null) {
-			return false;
-		}
-		final String txServer = cliContext.getTxServer().toLowerCase(Locale.ROOT);
-		return txServer.contains(INFOWAY_TS_HOST);
 	}
 
 	private IBaseResource getOperationOutcome(final String id,
@@ -380,9 +346,6 @@ public class ValidationProvider {
 			// Add slice info to diagnostics
 			if (message.hasSliceInfo() && message.sliceHtml != null) {
 				List<String> sliceInfo = engine.filterSlicingMessages(message.sliceHtml);
-				if (isInfowayTsServer()) {
-					sliceInfo.removeIf(this::isTsSupplementFalsePositive);
-				}
 				if (!sliceInfo.isEmpty()) {
 					final var newDiagnostics = new StringBuilder();
 					newDiagnostics.append(issue.getDiagnostics());
