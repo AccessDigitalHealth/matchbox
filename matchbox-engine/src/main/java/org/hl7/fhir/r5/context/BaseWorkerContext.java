@@ -41,6 +41,7 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -159,6 +160,8 @@ import com.google.gson.JsonObject;
 public abstract class BaseWorkerContext extends I18nBase implements IWorkerContext, IWorkerContextManager, IOIDServices {
   private static boolean allowedToIterateTerminologyResources;
   private static final String INFOWAY_TS_HOST = "terminologystandardsservice.ca";
+  private static final String TERMINOLOGY_SERVER_PACKAGE_ID = "matchbox.terminology-server";
+  private static final String TERMINOLOGY_SERVER_PACKAGE_VERSION = "live";
 
 
   public interface IByteProvider {
@@ -3797,6 +3800,9 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
         svs = txCache.getValueSet(canonical);
       } else {
         svs = terminologyClientManager.findValueSetOnServer(canonical);
+        if (svs != null) {
+          prepareTerminologyServerResource(svs.getVs(), version, svs.getServer());
+        }
         txCache.cacheValueSet(canonical, svs);
       }
       if (svs != null) {
@@ -3810,7 +3816,7 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
       if (svs == null) {
         return null;
       } else {
-        cacheResource(svs.getVs());
+        cacheResourceFromTerminologyServer(svs.getVs(), svs.getServer());
         cacheRequiredSupplements(svs.getVs());
         return (T) svs.getVs();
       }
@@ -3823,6 +3829,9 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
         scs = terminologyClientManager.findCodeSystemOnServer(canonical);
         if (scs == null) {
           scs = findCodeSystemDirectlyOnServer(canonical);
+        }
+        if (scs != null) {
+          prepareTerminologyServerResource(scs.getCs(), version, scs.getServer());
         }
         txCache.cacheCodeSystem(canonical, scs);
       }
@@ -3837,12 +3846,37 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
       if (scs == null) {
         return null;
       } else {
-        cacheResource(scs.getCs());
+        cacheResourceFromTerminologyServer(scs.getCs(), scs.getServer());
         return (T) scs.getCs();
       }
     } else {
       throw new Error("Not supported: doFindTxResource with type of "+class_.getName());
     }
+  }
+
+  private void cacheResourceFromTerminologyServer(Resource resource, String server) throws FHIRException {
+    if (resource == null) {
+      return;
+    }
+    PackageInformation packageInfo = prepareTerminologyServerResource(resource, version, server);
+    cacheResourceFromPackage(resource, packageInfo);
+  }
+
+  static PackageInformation prepareTerminologyServerResource(Resource resource, String fhirVersion, String server) {
+    PackageInformation packageInfo = resource instanceof CanonicalResource && ((CanonicalResource) resource).hasSourcePackage()
+        ? ((CanonicalResource) resource).getSourcePackage()
+        : terminologyServerPackageInfo(fhirVersion, server);
+    if (resource instanceof CanonicalResource && !((CanonicalResource) resource).hasSourcePackage()) {
+      ((CanonicalResource) resource).setSourcePackage(packageInfo);
+    }
+    return packageInfo;
+  }
+
+  static PackageInformation terminologyServerPackageInfo(String fhirVersion, String server) {
+    String canonical = Utilities.noString(server) ? TERMINOLOGY_SERVER_PACKAGE_ID : server;
+    return new PackageInformation(TERMINOLOGY_SERVER_PACKAGE_ID, TERMINOLOGY_SERVER_PACKAGE_VERSION,
+        Utilities.noString(fhirVersion) ? "unknown" : fhirVersion, new Date(0),
+        "Terminology server resources", canonical, canonical);
   }
 
   private void cacheRequiredSupplements(ValueSet vs) {
@@ -3862,7 +3896,7 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
       if (!Utilities.noString(canonical) && fetchResource(CodeSystem.class, canonical) == null) {
         SourcedCodeSystem scs = findCodeSystemDirectlyOnServer(canonical);
         if (scs != null && scs.getCs() != null) {
-          cacheResource(scs.getCs());
+          cacheResourceFromTerminologyServer(scs.getCs(), scs.getServer());
           txCache.cacheCodeSystem(canonical, scs);
         }
       }
@@ -3919,6 +3953,7 @@ public abstract class BaseWorkerContext extends I18nBase implements IWorkerConte
         return null;
       }
       CodeSystem cs = (CodeSystem) client.getClient().read("CodeSystem", rid);
+      prepareTerminologyServerResource(cs, version, client.getAddress());
       return new SourcedCodeSystem(client.getAddress(), cs);
     } catch (Exception e) {
       logger.logDebugMessage(LogCategory.TX, "Error resolving CodeSystem directly on terminology server: "+canonical+" - "+e.getMessage());
