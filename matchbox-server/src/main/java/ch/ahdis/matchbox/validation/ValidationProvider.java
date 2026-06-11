@@ -73,6 +73,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 import static ch.ahdis.matchbox.util.MatchboxServerUtils.addExtension;
 
@@ -360,6 +361,10 @@ public class ValidationProvider {
 				}
 			}
 
+			if (cliContext.isTxLogToConsole()) {
+				logTerminologyIssue(issue);
+			}
+
 			oo.addIssue(issue);
 		}
 
@@ -372,6 +377,34 @@ public class ValidationProvider {
 		}
 
 		return oo;
+	}
+
+	void logTerminologyIssue(final OperationOutcome.OperationOutcomeIssueComponent issue) {
+		if (issue == null || !isTerminologyDiagnostic(issue.getDiagnostics())) {
+			return;
+		}
+		log.warn("TX OperationOutcome issue severity={} code={} diagnostics={}",
+			issue.getSeverity(), issue.getCode(), issue.getDiagnostics());
+	}
+
+	boolean isTerminologyDiagnostic(final String text) {
+		if (text == null) {
+			return false;
+		}
+		final String lower = text.toLowerCase(Locale.ROOT);
+		return lower.contains("valueset")
+			|| lower.contains("value set")
+			|| lower.contains("codesystem")
+			|| lower.contains("code system")
+			|| lower.contains("supplement")
+			|| lower.contains("tx-resource")
+			|| lower.contains("terminology")
+			|| lower.contains("validate-code")
+			|| lower.contains("unauthorized")
+			|| lower.contains("server error")
+			|| lower.contains("http 401")
+			|| lower.contains("http 403")
+			|| lower.contains("http 500");
 	}
 
 	private IBaseResource getOoForError(final @NonNull String message) {

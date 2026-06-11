@@ -16,6 +16,7 @@ import ch.ahdis.matchbox.packages.IgLoaderFromJpaPackageCache;
 import ch.ahdis.matchbox.util.http.HttpRequestWrapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.hl7.fhir.r5.context.ConsoleTerminologyClientLogger;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -527,7 +528,10 @@ public class MatchboxEngineSupport {
 				TerminologyClientContext.setAllowNonConformantServers(true);
 				TerminologyClientContext.setCanAllowNonConformantServers(true);
 				// Currently all terminology clients are to R4 for version greater than R4
-				final String txver = validator.setTerminologyServer(cli.getTxServer(), cli.getTxLog(), FhirPublication.R4, cli.isTxUseEcosystem());
+				final String txver = validator.setTerminologyServer(cli.getTxServer(), cli.getEffectiveTxLogPath(), FhirPublication.R4, cli.isTxUseEcosystem());
+				if (cli.isTxLogToConsole()) {
+					validator.getContext().addTxClientLogger(new ConsoleTerminologyClientLogger(cli.getTxLogConsoleBodyLimitValue()));
+				}
 				log.debug("Version of the terminology server: {}", txver);
 			} catch (final Exception e) {
 				throw new TerminologyServerException("Error while setting the terminology server: " + e.getMessage(), e);

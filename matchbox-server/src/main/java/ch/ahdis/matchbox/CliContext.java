@@ -124,6 +124,15 @@ public class CliContext {
   @JsonProperty("txLog")
   private String txLog = null;
 
+  @JsonProperty("txLogPath")
+  private String txLogPath = null;
+
+  @JsonProperty("txLogToConsole")
+  private boolean txLogToConsole = true;
+
+  @JsonProperty("txLogConsoleBodyLimit")
+  private String txLogConsoleBodyLimit = "4000";
+
   @JsonProperty("txUseEcosystem")
   private boolean txUseEcosystem = true;
 
@@ -330,6 +339,7 @@ public class CliContext {
         }
       }
     }
+    applyTxLogEnvironmentAliases(environment);
     // get properties array from the environment?
     this.igsPreloaded = environment.getProperty("matchbox.fhir.context.igsPreloaded", String[].class);
     this.onlyOneEngine = environment.getProperty("matchbox.fhir.context.onlyOneEngine", Boolean.class, false);
@@ -362,6 +372,24 @@ public class CliContext {
     this.suppressErrors = other.suppressErrors;
     this.suppressWarnInfos = other.suppressWarnInfos;
     this.igs = other.igs;
+    this.txLogPath = other.txLogPath;
+    this.txLogToConsole = other.txLogToConsole;
+    this.txLogConsoleBodyLimit = other.txLogConsoleBodyLimit;
+  }
+
+  private void applyTxLogEnvironmentAliases(Environment environment) {
+    String txLogPath = environment.getProperty("TX_LOG_PATH", String.class);
+    if (txLogPath != null && !txLogPath.isBlank()) {
+      this.txLogPath = txLogPath;
+    }
+    String txLogToConsole = environment.getProperty("TX_LOG_TO_CONSOLE", String.class);
+    if (txLogToConsole != null && !txLogToConsole.isBlank()) {
+      this.txLogToConsole = Boolean.parseBoolean(txLogToConsole);
+    }
+    String txLogConsoleBodyLimit = environment.getProperty("TX_LOG_CONSOLE_BODY_LIMIT", String.class);
+    if (txLogConsoleBodyLimit != null && !txLogConsoleBodyLimit.isBlank()) {
+      this.txLogConsoleBodyLimit = txLogConsoleBodyLimit;
+    }
   }
 
   public String getIg() {
@@ -410,6 +438,42 @@ public class CliContext {
 
   public void setTxLog(String txLog) {
     this.txLog = txLog;
+  }
+
+  public String getTxLogPath() {
+    return txLogPath;
+  }
+
+  public void setTxLogPath(String txLogPath) {
+    this.txLogPath = txLogPath;
+  }
+
+  public String getEffectiveTxLogPath() {
+    return txLogPath != null && !txLogPath.isBlank() ? txLogPath : txLog;
+  }
+
+  public boolean isTxLogToConsole() {
+    return txLogToConsole;
+  }
+
+  public void setTxLogToConsole(boolean txLogToConsole) {
+    this.txLogToConsole = txLogToConsole;
+  }
+
+  public String getTxLogConsoleBodyLimit() {
+    return txLogConsoleBodyLimit;
+  }
+
+  public void setTxLogConsoleBodyLimit(String txLogConsoleBodyLimit) {
+    this.txLogConsoleBodyLimit = txLogConsoleBodyLimit;
+  }
+
+  public int getTxLogConsoleBodyLimitValue() {
+    try {
+      return Integer.parseInt(txLogConsoleBodyLimit);
+    } catch (NumberFormatException e) {
+      return 4000;
+    }
   }
 
   public void setTxUseEcosystem(boolean txUseEcosystem) {
@@ -779,6 +843,9 @@ public class CliContext {
         && Objects.equals(txServer, that.txServer)
         && txServerCache == that.txServerCache
         && Objects.equals(txLog, that.txLog)
+        && Objects.equals(txLogPath, that.txLogPath)
+        && txLogToConsole == that.txLogToConsole
+        && Objects.equals(txLogConsoleBodyLimit, that.txLogConsoleBodyLimit)
         && txUseEcosystem == that.txUseEcosystem
         && Objects.equals(lang, that.lang)
         && Objects.equals(snomedCT, that.snomedCT)
@@ -833,6 +900,9 @@ public class CliContext {
         txServer,
         txServerCache,
         txLog,
+        txLogPath,
+        txLogToConsole,
+        txLogConsoleBodyLimit,
         txUseEcosystem,
         lang,
         snomedCT,
@@ -885,6 +955,9 @@ public class CliContext {
         ", txServer='" + txServer + '\'' +
         ", txServerCache='" + txServerCache + '\'' +
         ", txLog='" + txLog + '\'' +
+        ", txLogPath='" + txLogPath + '\'' +
+        ", txLogToConsole=" + txLogToConsole +
+        ", txLogConsoleBodyLimit='" + txLogConsoleBodyLimit + '\'' +
         ", txUseEcosystem=" + txUseEcosystem +
         ", lang='" + lang + '\'' +
         ", snomedCT='" + snomedCT + '\'' +
@@ -959,6 +1032,9 @@ public class CliContext {
     addExtension(ext, "txServer", new UriType(this.txServer));
     addExtension(ext, "txServerCache", new BooleanType(this.txServerCache));
     addExtension(ext, "txLog", new StringType(this.txLog));
+    addExtension(ext, "txLogPath", new StringType(this.txLogPath));
+    addExtension(ext, "txLogToConsole", new BooleanType(this.txLogToConsole));
+    addExtension(ext, "txLogConsoleBodyLimit", new StringType(this.txLogConsoleBodyLimit));
     addExtension(ext, "txUseEcosystem", new BooleanType(this.txUseEcosystem));
     addExtension(ext, "lang", new StringType(this.lang));
     addExtension(ext, "snomedCT", new StringType(this.snomedCT));
