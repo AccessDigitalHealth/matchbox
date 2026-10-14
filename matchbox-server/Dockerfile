@@ -1,5 +1,5 @@
 FROM bellsoft/liberica-openjdk-debian:26
-EXPOSE 80
+EXPOSE 8080
 WORKDIR /app
 
 # Apply latest Debian security patches to the base image
