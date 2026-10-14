@@ -1,14 +1,14 @@
 @use 'sass:color';
+@use '../../variables';
 
 :host {
   display: flex;
   flex-direction: column;
 }
 
+$background-color: #f0f3f6;
 .attachment-field {
   $radius: 5px;
-  border-radius: $radius;
-  background: #f0f3f6;
 
   .attachment-entry {
     border-bottom: 1px solid #dedede;
@@ -38,9 +38,11 @@
 
   .drop-zone {
     text-align: center;
-    padding: 2rem;
-    border-bottom-left-radius: $radius;
-    border-bottom-right-radius: $radius;
+    padding: 1rem;
+    border-top-left-radius: $radius;
+    border-top-right-radius: $radius;
+    border: 6px dashed $background-color;
+    background: $background-color;
 
     &:first-child {
       border-top-left-radius: $radius;
@@ -48,7 +50,8 @@
     }
 
     &.file-over {
-      background: color.scale(#f0f3f6, $lightness: -5%);
+      background: color.scale($background-color, $lightness: -5%);
+      border-color: variables.$green-primary;
     }
 
     .spacer {
@@ -58,5 +61,13 @@
     .bold-text {
       font-weight: bold;
     }
+  }
+
+  .file-name {
+    border: 2px solid $background-color;
+    padding: 0.2rem 1rem;
+    color: color.scale($background-color, $lightness: -45%);
+    border-bottom-left-radius: $radius;
+    border-bottom-right-radius: $radius;
   }
 }

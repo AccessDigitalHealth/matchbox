@@ -10,7 +10,9 @@ import java.util.*;
  * @author Quentin Ligier
  **/
 public class ValidationReport {
-	private String modelVersion = "0.1";
+	public static final String MODEL_VERSION = "2.0";
+
+	private String modelVersion = MODEL_VERSION;
 	private String uuid;
 	private Date dateTime;
 	private String disclaimer;
@@ -18,7 +20,7 @@ public class ValidationReport {
 	private ValidationTestResult overallResult = ValidationTestResult.UNDEFINED;
 	private List<Metadata> additionalMetadata;
 	private List<ValidationSubReport> reports;
-	private List<ValidationItem> validationItems;
+	private List<Input> inputs;
 	private ValidationCounters counters = new ValidationCounters();
 
 	public ValidationReport() {
@@ -117,12 +119,12 @@ public class ValidationReport {
 		return this;
 	}
 
-	public ValidationReport addValidationItem(ValidationItem validationItem) {
-		if (this.validationItems == null) {
-			this.validationItems = new ArrayList();
+	public ValidationReport addInput(Input input) {
+		if (this.inputs == null) {
+			this.inputs = new ArrayList();
 		}
 
-		this.validationItems.add(validationItem);
+		this.inputs.add(input);
 		return this;
 	}
 
@@ -135,12 +137,12 @@ public class ValidationReport {
 		return this;
 	}
 
-	public List<ValidationItem> getValidationItems() {
-		return this.validationItems;
+	public List<Input> getInputs() {
+		return this.inputs;
 	}
 
-	public ValidationReport setValidationItems(List<ValidationItem> validationItems) {
-		this.validationItems = validationItems;
+	public ValidationReport setInputs(List<Input> inputs) {
+		this.inputs = inputs;
 		return this;
 	}
 
@@ -194,11 +196,6 @@ public class ValidationReport {
 	}
 
 	@JsonIgnore
-	public boolean isModelVersionValid() {
-		return this.modelVersion == null || !this.modelVersion.isBlank();
-	}
-
-	@JsonIgnore
 	public boolean isReportsValid() {
 		return this.reports == null || !this.reports.isEmpty();
 	}
@@ -209,8 +206,8 @@ public class ValidationReport {
 	}
 
 	@JsonIgnore
-	public boolean isValidationItemsValid() {
-		return this.validationItems == null || !this.validationItems.isEmpty();
+	public boolean isInputsValid() {
+		return this.inputs == null || !this.inputs.isEmpty();
 	}
 
 	@JsonIgnore
@@ -227,7 +224,7 @@ public class ValidationReport {
 			&& this.isValidationTestResultValid()
 			&& this.isReportsValid()
 			&& this.isAdditionalMetadataValid()
-			&& this.isValidationItemsValid()
+			&& this.isInputsValid()
 			&& this.isUuidValid();
 	}
 
@@ -240,8 +237,8 @@ public class ValidationReport {
 			.setModelVersion(validationReport.getModelVersion())
 			.setUuid(validationReport.getUuid())
 			.setValidationMethod(ValidationMethod.clone(validationReport.getValidationMethod()))
-			.setValidationItems(
-				validationReport.getValidationItems() != null ? validationReport.getValidationItems().stream().map(ValidationItem::clone).toList() : null
+			.setInputs(
+				validationReport.getInputs() != null ? validationReport.getInputs().stream().map(Input::clone).toList() : null
 			)
 			.setReports(validationReport.getReports() != null ? validationReport.getReports().stream().map(ValidationSubReport::clone).toList() : null)
 			.setAdditionalMetadata(

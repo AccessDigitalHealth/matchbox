@@ -1,52 +1,137 @@
-import { Component } from '@angular/core';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { FhirConfigService } from '../fhirConfig.service';
 import { UntypedFormControl, Validators } from '@angular/forms';
-import FhirClient from 'fhir-kit-client';
 import { FhirPathService } from '../fhirpath.service';
-import {OperationResult} from "../util/operation-result";
+import { OperationResult } from '../util/operation-result';
+import { FhirClientWrapper } from '../util/fhir-client-wrapper';
+import Bundle = fhir.r4.Bundle;
+import { FhirResource } from 'fhir-kit-client';
+import {
+  PACKAGE_REGISTRY_URL,
+  PackageCatalogEntry,
+  PackageRegistryService,
+  PackageVersion,
+} from './package-registry.service';
 
 @Component({
-    selector: 'app-igs',
-    templateUrl: './igs.component.html',
-    styleUrls: ['./igs.component.scss'],
-    standalone: false
+  selector: 'app-igs',
+  templateUrl: './igs.component.html',
+  styleUrls: ['./igs.component.scss'],
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
 })
 export class IgsComponent {
   public addPackageId: UntypedFormControl;
   public addVersion: UntypedFormControl;
   public addUrl: UntypedFormControl;
-  public selection: fhir.r4.ImplementationGuide;
+  public selection: fhir.r4.ImplementationGuide | null = null;
 
   update: boolean = false;
 
-  client: FhirClient;
-  igs: fhir.r4.ImplementationGuide[];
-  errorMessage: string;
+  client: FhirClientWrapper;
+  igs: fhir.r4.ImplementationGuide[] = [];
+  errorMessage: string | null = null;
   operationResult: OperationResult | null = null;
+
+  pageSize = 20;
+  currentOffset = 0;
+  totalCount: number | null = null;
 
   query = {
     _sort: 'title',
-    _count: 10000,
+    _count: 20,
+    _offset: 0,
   };
 
+  // Whether the server is in httpReadOnly mode, i.e. IGs can't be installed through the API
+  readOnly = false;
+
+  readonly registryUrl = PACKAGE_REGISTRY_URL;
+  readonly registryFhirVersions = ['R4', 'R4B', 'R5'];
+  public registryName = new UntypedFormControl('');
+  public registryFhirVersion = new UntypedFormControl('');
+  public registrySince = new UntypedFormControl('');
+  public registryVersion = new UntypedFormControl('');
+  registryPackages: PackageCatalogEntry[] | null = null;
+  registryOffset = 0;
+  registrySearching = false;
+  registryError: string | null = null;
+  registrySelection: PackageCatalogEntry | null = null;
+  registryVersions: PackageVersion[] = [];
+  // The installed packages, as 'packageId#version'
+  installedPackages = new Set<string>();
+
   constructor(
-    private data: FhirConfigService,
-    private fhirPathService: FhirPathService
+    data: FhirConfigService,
+    private fhirPathService: FhirPathService,
+    private packageRegistry: PackageRegistryService
   ) {
     this.client = data.getFhirClient();
     this.addPackageId = new UntypedFormControl('', [Validators.required, Validators.minLength(1)]);
     this.addVersion = new UntypedFormControl('current', [Validators.required, Validators.minLength(1)]);
-    this.addUrl = new UntypedFormControl('url');
+    this.addUrl = new UntypedFormControl('');
     this.search();
+    this.checkReadOnly();
+    this.loadInstalledPackages();
+  }
+
+  /**
+   * The $install-npm-package operation is only registered when the server is not in httpReadOnly mode.
+   */
+  /**
+   * Loads all installed packages, to mark them in the registry results. The server ignores the search parameters of
+   * ImplementationGuide, so the whole list is fetched.
+   */
+  loadInstalledPackages() {
+    this.client
+      .search({ resourceType: 'ImplementationGuide', searchParams: { _count: 10000 } })
+      .then((bundle: Bundle) => {
+        this.installedPackages = new Set(
+          (bundle.entry ?? [])
+            .map((entry) => <fhir.r4.ImplementationGuide>entry.resource)
+            .map((ig) => ig.packageId + '#' + (ig.version ?? '').replace(/ \(last\)$/, ''))
+        );
+      })
+      .catch(() => {
+        this.installedPackages = new Set();
+      });
+  }
+
+  isInstalled(packageId: string, version: string): boolean {
+    return this.installedPackages.has(packageId + '#' + version);
+  }
+
+  hasInstalledVersion(packageId: string): boolean {
+    for (const installed of this.installedPackages) {
+      if (installed.startsWith(packageId + '#')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  checkReadOnly() {
+    this.client
+      .capabilityStatement()
+      .then((capabilityStatement) => {
+        const operations = capabilityStatement.rest?.flatMap((rest) => rest.operation ?? []) ?? [];
+        this.readOnly = !operations.some((operation) => operation.name?.replace(/^\$/, '') === 'install-npm-package');
+      })
+      .catch(() => {
+        // If the capability statement can't be read, let the server decide when installing
+        this.readOnly = false;
+      });
   }
 
   search() {
+    this.query._offset = this.currentOffset;
+    this.query._count = this.pageSize;
     this.client
       .search({ resourceType: 'ImplementationGuide', searchParams: this.query })
-      .then((response) => {
-        const bundle = <fhir.r4.Bundle>response;
-        this.igs = bundle.entry.map((entry) => <fhir.r4.ImplementationGuide>entry.resource);
-        this.selection = undefined;
+      .then((bundle: Bundle) => {
+        this.igs = bundle.entry ? bundle.entry.map((entry) => <fhir.r4.ImplementationGuide>entry.resource) : [];
+        this.totalCount = bundle.total ?? null;
+        this.selection = null;
         this.addPackageId.setValue('');
         this.addVersion.setValue('');
         this.addUrl.setValue('');
@@ -62,6 +147,33 @@ export class IgsComponent {
     this.update = false;
   }
 
+  get hasPreviousPage(): boolean {
+    return this.currentOffset > 0;
+  }
+
+  get hasNextPage(): boolean {
+    return this.totalCount !== null && this.currentOffset + this.pageSize < this.totalCount;
+  }
+
+  get currentPage(): number {
+    return Math.floor(this.currentOffset / this.pageSize) + 1;
+  }
+
+  get totalPages(): number {
+    if (this.totalCount === null) return 0;
+    return Math.ceil(this.totalCount / this.pageSize);
+  }
+
+  previousPage() {
+    this.currentOffset = Math.max(0, this.currentOffset - this.pageSize);
+    this.search();
+  }
+
+  nextPage() {
+    this.currentOffset += this.pageSize;
+    this.search();
+  }
+
   getPackageUrl(ig: fhir.r4.ImplementationGuide): string {
     return this.fhirPathService.evaluateToString(
       ig,
@@ -70,17 +182,18 @@ export class IgsComponent {
   }
 
   isCurrent(ig: fhir.r4.ImplementationGuide): boolean {
-    let result  = this.fhirPathService.evaluateToString(
-       ig,
-       "meta.tag.where(system='http://matchbox.health/fhir/CodeSystem/tag').code");
-    return result === "current";
+    let result = this.fhirPathService.evaluateToString(
+      ig,
+      "meta.tag.where(system='http://matchbox.health/fhir/CodeSystem/tag').code"
+    );
+    return result === 'current';
   }
 
   selectRow(ig: fhir.r4.ImplementationGuide) {
     this.selection = ig;
     this.addPackageId.setValue(this.selection.packageId);
     this.addUrl.setValue(this.getPackageUrl(ig));
-    let version: String = this.selection.version;
+    let version = this.selection.version;
     if (version) {
       if (version.endsWith(' (last)')) {
         version = version.substring(0, version.length - 7);
@@ -105,6 +218,11 @@ export class IgsComponent {
     const igVersion = this.addVersion.value.trim();
     this.addVersion.setValue(igVersion);
 
+    this.installPackage(igId.toString(), igVersion, this.addUrl.value);
+  }
+
+  installPackage(packageId: string, version: string, url: string) {
+    this.errorMessage = null;
     this.update = true;
 
     this.client
@@ -112,10 +230,10 @@ export class IgsComponent {
         resourceType: 'ImplementationGuide',
         body: {
           resourceType: 'ImplementationGuide',
-          name: igId,
-          version: igVersion,
-          packageId: igId,
-          url: this.addUrl.value,
+          name: packageId,
+          version: version,
+          packageId: packageId,
+          url: url,
         },
         options: {
           headers: {
@@ -124,12 +242,14 @@ export class IgsComponent {
         },
       })
       .then((response) => {
-        this.errorMessage = 'Created Implementation Guide ' + this.addPackageId.value;
-        this.operationResult = OperationResult.fromOperationOutcome(response as fhir.r4.OperationOutcome);
+        this.errorMessage = 'Created Implementation Guide ' + packageId;
+        this.operationResult = OperationResult.fromOperationOutcome(response);
+        this.currentOffset = 0;
         this.search();
+        this.loadInstalledPackages();
       })
       .catch((error) => {
-        this.errorMessage = 'Error creating Implementation Guide ' + this.addPackageId.value;
+        this.errorMessage = 'Error creating Implementation Guide ' + packageId;
         if (error.response?.data) {
           this.operationResult = OperationResult.fromOperationOutcome(error.response.data);
         } else {
@@ -141,6 +261,10 @@ export class IgsComponent {
 
   onUpdate() {
     this.errorMessage = null;
+    if (!this.selection) {
+      this.errorMessage = 'No Implementation Guide selected';
+      return;
+    }
 
     this.selection.name = this.addPackageId.value;
     this.selection.version = this.addVersion.value;
@@ -148,24 +272,28 @@ export class IgsComponent {
     this.selection.url = this.addUrl.value;
     this.update = true;
 
+    const selection = this.selection;
     this.client
       .update({
         resourceType: this.selection.resourceType,
         id: this.selection.id,
-        body: this.selection,
+        body: this.selection as unknown as FhirResource,
         options: {
+          keepalive: false,
           headers: {
             Prefer: 'return=OperationOutcome',
           },
         },
       })
       .then((response) => {
-        this.errorMessage = 'Updated Implementation Guide ' + this.selection.packageId;
-        this.operationResult = OperationResult.fromOperationOutcome(response as fhir.r4.OperationOutcome);
+        this.errorMessage = 'Updated Implementation Guide ' + selection.packageId;
+        this.operationResult = OperationResult.fromOperationOutcome(response);
+        this.currentOffset = 0;
         this.search();
+        this.loadInstalledPackages();
       })
       .catch((error) => {
-        this.errorMessage = 'Error updating Implementation Guide ' + this.selection.packageId;
+        this.errorMessage = 'Error updating Implementation Guide ' + selection.packageId;
         if (error.response?.data) {
           this.operationResult = OperationResult.fromOperationOutcome(error.response.data);
         } else {
@@ -178,11 +306,16 @@ export class IgsComponent {
   onDelete() {
     this.errorMessage = null;
     this.update = true;
+    if (!this.selection) {
+      this.errorMessage = 'No Implementation Guide selected';
+      return;
+    }
 
+    const selection = this.selection;
     this.client
       .delete({
         resourceType: this.selection.resourceType,
-        id: this.selection.id,
+        id: this.selection.id ?? '',
         options: {
           headers: {
             Prefer: 'return=OperationOutcome',
@@ -191,12 +324,14 @@ export class IgsComponent {
         },
       })
       .then((response) => {
-        this.errorMessage = 'Deleted Implementation Guide Resource ' + this.selection.packageId;
-        this.operationResult = OperationResult.fromOperationOutcome(response as fhir.r4.OperationOutcome);
+        this.errorMessage = 'Deleted Implementation Guide Resource ' + selection.packageId;
+        this.operationResult = OperationResult.fromOperationOutcome(response);
+        this.currentOffset = 0;
         this.search();
+        this.loadInstalledPackages();
       })
       .catch((error) => {
-        this.errorMessage = 'Error deleting Implementation Guide ' + this.selection.packageId;
+        this.errorMessage = 'Error deleting Implementation Guide ' + selection.packageId;
         if (error.response?.data) {
           this.operationResult = OperationResult.fromOperationOutcome(error.response.data);
         } else {
@@ -204,5 +339,81 @@ export class IgsComponent {
         }
         this.update = false;
       });
+  }
+
+  searchRegistry() {
+    this.registrySearching = true;
+    this.registryError = null;
+    this.registrySelection = null;
+    this.registryVersions = [];
+    this.registryOffset = 0;
+    this.packageRegistry
+      .searchCatalog(
+        this.registryName.value ?? '',
+        this.registryFhirVersion.value ?? '',
+        this.registrySince.value ?? ''
+      )
+      .then((packages) => {
+        this.registryPackages = packages;
+        // A package may have been selected in the previous results while searching
+        this.registrySelection = null;
+        this.registryVersions = [];
+      })
+      .catch((error) => {
+        this.registryPackages = null;
+        this.registryError = 'Error searching ' + this.registryUrl + ': ' + (error.error?.error ?? error.message);
+      })
+      .finally(() => {
+        this.registrySearching = false;
+      });
+  }
+
+  get registryPage(): PackageCatalogEntry[] {
+    return this.registryPackages?.slice(this.registryOffset, this.registryOffset + this.pageSize) ?? [];
+  }
+
+  get registryTotalPages(): number {
+    return Math.ceil((this.registryPackages?.length ?? 0) / this.pageSize);
+  }
+
+  get registryCurrentPage(): number {
+    return Math.floor(this.registryOffset / this.pageSize) + 1;
+  }
+
+  registryPreviousPage() {
+    this.registryOffset = Math.max(0, this.registryOffset - this.pageSize);
+  }
+
+  registryNextPage() {
+    if (this.registryOffset + this.pageSize < (this.registryPackages?.length ?? 0)) {
+      this.registryOffset += this.pageSize;
+    }
+  }
+
+  selectRegistryPackage(entry: PackageCatalogEntry) {
+    this.registrySelection = entry;
+    this.registryVersions = [];
+    this.registryVersion.setValue(entry.version);
+    this.packageRegistry
+      .getVersions(entry.name)
+      .then((result) => {
+        if (this.registrySelection?.name !== entry.name) {
+          return;
+        }
+        this.registryVersions = result.versions;
+        if (!result.versions.some((version) => version.version === this.registryVersion.value)) {
+          this.registryVersion.setValue(result.latest ?? result.versions[0]?.version ?? entry.version);
+        }
+      })
+      .catch((error) => {
+        this.registryError = 'Error reading the versions of ' + entry.name + ': ' + error.message;
+      });
+  }
+
+  installRegistryPackage() {
+    if (!this.registrySelection || !this.registryVersion.value) {
+      return;
+    }
+    this.installPackage(this.registrySelection.name, this.registryVersion.value, '');
   }
 }

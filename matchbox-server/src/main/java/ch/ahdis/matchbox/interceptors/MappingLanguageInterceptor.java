@@ -25,24 +25,17 @@ import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 import java.util.StringTokenizer;
 
 import ca.uhn.fhir.context.FhirVersionEnum;
 import ca.uhn.fhir.rest.server.exceptions.InternalErrorException;
 import ca.uhn.fhir.rest.server.exceptions.UnclassifiedServerFailureException;
-import ch.ahdis.matchbox.engine.MatchboxEngine;
-import ch.ahdis.matchbox.engine.exception.MatchboxUnsupportedFhirVersionException;
-import ch.ahdis.matchbox.mappinglanguage.MatchboxStructureMapUtilities;
-import ch.ahdis.matchbox.mappinglanguage.TransformSupportServices;
+import ch.ahdis.matchbox.config.MatchboxFhirVersion;
+import ch.ahdis.matchbox.config.property.MatchboxFhirContextProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-import org.hl7.fhir.convertors.factory.VersionConvertorFactory_40_50;
-import org.hl7.fhir.convertors.factory.VersionConvertorFactory_43_50;
 import org.hl7.fhir.instance.model.api.IIdType;
-import org.hl7.fhir.r5.context.IWorkerContext;
-import org.hl7.fhir.r5.model.Narrative;
 
 import ca.uhn.fhir.rest.api.Constants;
 import ca.uhn.fhir.rest.api.server.RequestDetails;
@@ -51,9 +44,6 @@ import ca.uhn.fhir.rest.server.interceptor.InterceptorAdapter;
 import ch.ahdis.matchbox.util.MatchboxEngineSupport;
 import ch.ahdis.matchbox.spring.boot.autoconfigure.MutableHttpServletRequest;
 import org.hl7.fhir.r5.model.StructureMap;
-import org.hl7.fhir.r5.utils.structuremap.StructureMapUtilities;
-import org.hl7.fhir.utilities.xhtml.NodeType;
-import org.hl7.fhir.utilities.xhtml.XhtmlNode;
 
 import javax.annotation.Nullable;
 
@@ -72,12 +62,15 @@ import javax.annotation.Nullable;
 public class MappingLanguageInterceptor extends InterceptorAdapter {
 
 	protected final MatchboxEngineSupport matchboxEngineSupport;
+	protected final MatchboxFhirContextProperties matchboxContext;
 
 	private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MappingLanguageInterceptor.class);
 
-	public MappingLanguageInterceptor(final MatchboxEngineSupport matchboxEngineSupport) {
+	public MappingLanguageInterceptor(final MatchboxEngineSupport matchboxEngineSupport,
+	                                  final MatchboxFhirContextProperties matchboxContext) {
 		super();
 		this.matchboxEngineSupport = matchboxEngineSupport;
+		this.matchboxContext = matchboxContext;
 	}
 
 	@Override
@@ -92,7 +85,7 @@ public class MappingLanguageInterceptor extends InterceptorAdapter {
 			FhirVersionEnum requestedFhirVersion = this.extractFhirVersion(contentType);
 			final FhirVersionEnum mainEngineFhirVersion = this.matchboxEngineSupport.getServerFhirVersion();
 
-			if (requestedFhirVersion != null && this.matchboxEngineSupport.getClientContext().getOnlyOneEngine()) {
+			if (requestedFhirVersion != null && this.matchboxContext.isOnlyOneEngine()) {
 				// If the onlyOneEngine mode is enabled, check that it's the same FHIR version
 				if (mainEngineFhirVersion != requestedFhirVersion) {
 					throw new UnclassifiedServerFailureException(415, "The requested FHIR version (" + requestedFhirVersion +
@@ -168,20 +161,7 @@ public class MappingLanguageInterceptor extends InterceptorAdapter {
 		if (structureMapId != null) {
 			mapR5.setId(structureMapId);
 		}
-		return switch (fhirVersion) {
-			case R4:
-				org.hl7.fhir.r4.model.StructureMap sm4 = (org.hl7.fhir.r4.model.StructureMap) VersionConvertorFactory_40_50.convertResource(
-					mapR5);
-				yield new org.hl7.fhir.r4.formats.JsonParser().composeString(sm4);
-			case R4B:
-				org.hl7.fhir.r4b.model.StructureMap sm4b = (org.hl7.fhir.r4b.model.StructureMap) VersionConvertorFactory_43_50.convertResource(
-					mapR5);
-				yield new org.hl7.fhir.r4b.formats.JsonParser().composeString(sm4b);
-			case R5:
-				yield new org.hl7.fhir.r5.formats.JsonParser().composeString(mapR5);
-			default:
-				throw new MatchboxUnsupportedFhirVersionException("Unsupported FHIR version: " + fhirVersion,
-																				  fhirVersion);
-		};
+		final var versionSupport = new MatchboxFhirVersion(fhirVersion);
+		return versionSupport.serializeForResponse(mapR5);
 	}
 }

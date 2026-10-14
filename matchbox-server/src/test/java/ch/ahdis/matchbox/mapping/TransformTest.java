@@ -4,11 +4,18 @@ import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.context.FhirVersionEnum;
 import ca.uhn.fhir.jpa.starter.Application;
 import ch.ahdis.matchbox.test.CompareUtil;
+import ch.ahdis.matchbox.test.ServerStartup;
 import ch.ahdis.matchbox.test.ValidationClient;
+import ch.ahdis.matchbox.util.MatchboxEngineSupport;
 import org.apache.commons.io.FileUtils;
+import org.hl7.fhir.r4.model.OperationOutcome;
+import org.hl7.fhir.r4.model.Parameters;
+import org.hl7.fhir.r4.model.StringType;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
@@ -23,9 +30,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * matchbox
@@ -34,7 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  **/
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT)
 @ContextConfiguration(classes = {Application.class})
-@ActiveProfiles("test-transform")
+@ActiveProfiles({"tests", "test-transform"})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public class TransformTest {
@@ -44,11 +51,19 @@ public class TransformTest {
 	private final ValidationClient validationClient = new ValidationClient(FHIR_CONTEXT, TARGET_SERVER + "/fhir");
 	private final HttpClient httpClient = HttpClient.newHttpClient();
 
+	@Autowired
+	private MatchboxEngineSupport matchboxEngineSupport;
+
 	@BeforeAll
 	void waitUntilStartup() throws Exception {
-		Thread.sleep(10000); // give the server some time to start up
-		this.validationClient.capabilities();
+		ServerStartup.awaitServerReady(TARGET_SERVER, this.matchboxEngineSupport);
 		CompareUtil.logMemory();
+	}
+
+	@AfterAll
+	void releaseContext() {
+		// JUnit can keep the PER_CLASS test instance until the end of the run: don't let it retain the closed context
+		this.matchboxEngineSupport = null;
 	}
 
 	@Test
@@ -71,6 +86,24 @@ public class TransformTest {
 		final var patient = response.body();
 		assertTrue(patient.contains("<Patient xmlns=\"http://hl7.org/fhir\">"));
 		assertTrue(patient.contains("<gender value=\"female\"/>"));
+
+		// Test the debug mode
+		final var transformRequest2 = HttpRequest.newBuilder(URI.create(
+				TARGET_SERVER + "/fhir/StructureMap/$transform?source=http://ahdis.ch/matchbox/fml/qr2patgender&debug=true"))
+			.POST(HttpRequest.BodyPublishers.ofString(this.getContent("qr.json")))
+			.header("Content-Type", "application/fhir+json")
+			.header("Accept", "application/fhir+xml")
+			.build();
+		final var response2 = this.httpClient.send(transformRequest2, HttpResponse.BodyHandlers.ofString());
+		final var parameters = FHIR_CONTEXT.newXmlParser().parseResource(Parameters.class, response2.body());
+		assertNotNull(parameters);
+		assertTrue(parameters.hasParameter("result"));
+		assertTrue(parameters.hasParameter("parameters"));
+		assertTrue(parameters.hasParameter("trace"));
+		final var result = parameters.getParameterValue("result");
+		assertInstanceOf(StringType.class, result);
+		assertTrue(((StringType) result).getValue().contains("<Patient xmlns=\"http://hl7.org/fhir\">"));
+
 	}
 
 	@Test
@@ -94,7 +127,7 @@ public class TransformTest {
 		assertTrue(docRef.contains("<line value=\"rue de la république 10\">"));
 		assertTrue(docRef.contains("<valueString value=\"rue de la république\"/>"));
 	}
-	
+
 	@Test
 	void testTransformEncounterR4() throws Exception {
 		// Test the regular $transform operation with an R4 resource
@@ -132,6 +165,106 @@ public class TransformTest {
 			 <TRight xmlns="http://hl7.org/fhir/tutorial">
 				  <a2 value="test"/>
 			 </TRight>""", response.body());
+	}
+
+	/**
+	 * The POST of a StructureMap returns a resource with a string id (the last segment of the canonical URL). Reading
+	 * the resource back with that id must work, see <a href="https://github.com/ahdis/matchbox/issues/573">issue
+	 * 573</a>.
+	 */
+	@Test
+	void testReadStructureMapByStringId() throws Exception {
+		final var createMapRequest = HttpRequest.newBuilder(URI.create(TARGET_SERVER + "/fhir/StructureMap"))
+			.POST(HttpRequest.BodyPublishers.ofString(this.getContent("qr2patgender.map")))
+			.header("Content-Type", "text/fhir-mapping")
+			.header("Accept", "application/fhir+json")
+			.build();
+		final var createResponse = this.httpClient.send(createMapRequest, HttpResponse.BodyHandlers.ofString());
+		assertEquals(201, createResponse.statusCode());
+		assertTrue(createResponse.body().replace(" ", "").contains("\"id\":\"qr2patgender\""),
+					  "the created StructureMap should have the id 'qr2patgender': " + createResponse.body());
+
+		final var readRequest = HttpRequest.newBuilder(URI.create(TARGET_SERVER + "/fhir/StructureMap/qr2patgender"))
+			.GET()
+			.header("Accept", "application/fhir+json")
+			.build();
+		final var readResponse = this.httpClient.send(readRequest, HttpResponse.BodyHandlers.ofString());
+		assertEquals(200, readResponse.statusCode(), "reading the StructureMap by its id failed: " + readResponse.body());
+		assertTrue(readResponse.body().contains("http://ahdis.ch/matchbox/fml/qr2patgender"),
+					  "the read StructureMap should have the expected canonical URL: " + readResponse.body());
+	}
+
+	/**
+	 * Reading a StructureMap with an unknown (non-numeric) id shall return a 404, not a server error.
+	 */
+	@Test
+	void testReadStructureMapByUnknownStringId() throws Exception {
+		final var readRequest = HttpRequest.newBuilder(URI.create(TARGET_SERVER + "/fhir/StructureMap/thisMapDoesNotExist"))
+			.GET()
+			.header("Accept", "application/fhir+json")
+			.build();
+		final var readResponse = this.httpClient.send(readRequest, HttpResponse.BodyHandlers.ofString());
+		assertEquals(404, readResponse.statusCode(), "expected a 404: " + readResponse.body());
+	}
+
+	/**
+	 * In the 'onlyOneEngine' mode, a StructureDefinition that is created on the server is used by the next validation,
+	 * also when a validation before has looked up its canonical in the installed packages, without finding it: the
+	 * cached lookup of the IG of a profile (#616) must not hide it.
+	 */
+	@Test
+	void testValidateWithCreatedStructureDefinition() throws Exception {
+		final String profile = "http://matchbox.health/test/issue616/StructureDefinition/practitioner-name-required";
+		final String practitioner = """
+			{ "resourceType": "Practitioner", "active": true }""";
+
+		// not known yet: the canonical is looked up in the installed packages, and not found
+		final List<String> unknown = errors(this.validationClient.validate(practitioner, profile));
+		assertFalse(unknown.isEmpty(), "the profile should be unknown before its creation");
+		assertTrue(unknown.stream().noneMatch(e -> e.contains("Practitioner.name")), unknown.toString());
+
+		final var createRequest = HttpRequest.newBuilder(URI.create(TARGET_SERVER + "/fhir/StructureDefinition"))
+			.POST(HttpRequest.BodyPublishers.ofString("""
+				{
+				  "resourceType": "StructureDefinition",
+				  "url": "%s",
+				  "version": "0.1.0",
+				  "name": "PractitionerNameRequired",
+				  "status": "active",
+				  "fhirVersion": "4.0.1",
+				  "kind": "resource",
+				  "abstract": false,
+				  "type": "Practitioner",
+				  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Practitioner",
+				  "derivation": "constraint",
+				  "differential": {
+				    "element": [
+				      { "id": "Practitioner", "path": "Practitioner" },
+				      { "id": "Practitioner.name", "path": "Practitioner.name", "min": 1 }
+				    ]
+				  }
+				}""".formatted(profile)))
+			.header("Content-Type", "application/fhir+json")
+			.header("Accept", "application/fhir+json")
+			.build();
+		final var createResponse = this.httpClient.send(createRequest, HttpResponse.BodyHandlers.ofString());
+		assertEquals(201, createResponse.statusCode(), createResponse.body());
+
+		// now the profile is used: the missing name is the only error
+		final List<String> missingName = errors(this.validationClient.validate(practitioner, profile));
+		assertEquals(1, missingName.size(), missingName.toString());
+		assertTrue(missingName.getFirst().contains("Practitioner.name"), missingName.toString());
+		assertEquals(List.of(), errors(this.validationClient.validate("""
+			{ "resourceType": "Practitioner", "active": true, "name": [ { "family": "Muster" } ] }""", profile)));
+	}
+
+	private static List<String> errors(final org.hl7.fhir.instance.model.api.IBaseOperationOutcome outcome) {
+		return ((OperationOutcome) outcome).getIssue().stream()
+			.filter(i -> i.getSeverity() == OperationOutcome.IssueSeverity.ERROR
+				|| i.getSeverity() == OperationOutcome.IssueSeverity.FATAL)
+			.map(i -> String.join(",", i.getExpression().stream().map(Object::toString).toList()) + ": "
+				+ (i.getDetails().hasText() ? i.getDetails().getText() : i.getDiagnostics()))
+			.toList();
 	}
 
 	private String getContent(final String resourceName) throws IOException {

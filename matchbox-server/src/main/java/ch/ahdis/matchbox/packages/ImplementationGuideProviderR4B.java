@@ -6,6 +6,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import ch.ahdis.matchbox.config.property.MatchboxFhirContextProperties;
+import ch.ahdis.matchbox.events.ImplementationGuideInstalledEvent;
+import ch.ahdis.matchbox.events.ImplementationGuideUninstalledEvent;
 import jakarta.servlet.http.HttpServletRequest;
 import ca.uhn.fhir.jpa.rp.r4b.ImplementationGuideResourceProvider;
 import org.hl7.fhir.instance.model.api.IIdType;
@@ -19,6 +22,7 @@ import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Sort.Direction;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -76,6 +80,12 @@ public class ImplementationGuideProviderR4B extends ImplementationGuideResourceP
 	@Autowired
 	private CliContext cliContext;
 
+	@Autowired
+	private MatchboxFhirContextProperties matchboxContext;
+
+	@Autowired
+	private ApplicationEventPublisher applicationEventPublisher;
+
 	@Override
 	public MethodOutcome delete(HttpServletRequest theRequest, IIdType theResource, String theConditional,
 			RequestDetails theRequestDetails) {
@@ -110,6 +120,7 @@ public class ImplementationGuideProviderR4B extends ImplementationGuideResourceP
 		OperationOutcome oo = load(theResource);
 		MethodOutcome outcome = new MethodOutcome();
 		outcome.setOperationOutcome(oo);
+		this.applicationEventPublisher.publishEvent(new ImplementationGuideInstalledEvent(this));
 		return outcome;
 	}
 
@@ -154,10 +165,18 @@ public class ImplementationGuideProviderR4B extends ImplementationGuideResourceP
 	}
 
 	public OperationOutcome uninstall(ImplementationGuide theResource) {
-		return getOperationOutcome(packageInstallerSvc.uninstall(this.getPackageInstallationSpec()
+		PackageDeleteOutcomeJson outcome = packageInstallerSvc.uninstall(this.getPackageInstallationSpec()
 				.setPackageUrl(theResource.getUrl())
 				.setName(theResource.getName())
-				.setVersion(theResource.getVersion())));
+				.setVersion(theResource.getVersion()));
+		if (outcome != null) {
+			this.applicationEventPublisher.publishEvent(new ImplementationGuideUninstalledEvent(
+				this,
+				theResource.getName(),
+				theResource.getVersion()
+			));
+		}
+		return getOperationOutcome(outcome);
 	}
 
 	public PackageInstallationSpec getPackageInstallationSpec() {
@@ -189,7 +208,7 @@ public class ImplementationGuideProviderR4B extends ImplementationGuideResourceP
 				.setVersion(theResource.getVersion())
 				.setInstallMode(PackageInstallationSpec.InstallModeEnum.STORE_ONLY));
 
-		if (cliContext!=null && cliContext.getOnlyOneEngine()) {
+		if (this.matchboxContext.isOnlyOneEngine()) {
 			MatchboxEngine engine = matchboxEngineSupport.getMatchboxEngine(FHIRVersion._4_3_0.getDisplay(), this.cliContext, false, false);
 			try {
 				engine.loadPackage(theResource.getPackageId(), theResource.getVersion());
@@ -230,14 +249,14 @@ public class ImplementationGuideProviderR4B extends ImplementationGuideResourceP
 
 		if (this.appProperties.getOnly_install_packages() != null && this.appProperties.getOnly_install_packages()) {
 			// In the 'only_install_packages' mode, we can stop after having installed the IGs in the database
+			this.applicationEventPublisher.publishEvent(new ImplementationGuideInstalledEvent(this));
 			return installOutcome;
 		}
 
 		log.info("Creating cached engines during startup  " + VersionUtil.getMemory());
 		//The matchboxEngineSupport will set the 'initialized' flag after having reloaded
-		MatchboxEngine engine = matchboxEngineSupport.getMatchboxEngineNotSynchronized(null, this.cliContext, false,
-																												 true);
-		if (cliContext!=null && cliContext.getOnlyOneEngine()) {
+		MatchboxEngine engine = matchboxEngineSupport.reloadEngines(this.cliContext);
+		if (this.matchboxContext.isOnlyOneEngine()) {
 			List<NpmPackageVersionEntity> packages = myPackageVersionDao
 					.findAll(org.springframework.data.domain.Sort.by(Direction.ASC, "myPackageId", "myVersionId"));
 			for (NpmPackageVersionEntity npmPackage : packages) {
@@ -249,6 +268,7 @@ public class ImplementationGuideProviderR4B extends ImplementationGuideResourceP
 			}
 		}
 		log.info("Finished engines during startup  " + VersionUtil.getMemory());
+		this.applicationEventPublisher.publishEvent(new ImplementationGuideInstalledEvent(this));
 		return installOutcome;
 	}
 
@@ -261,7 +281,6 @@ public class ImplementationGuideProviderR4B extends ImplementationGuideResourceP
 	public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
 	}
 
-	@Override
 	@Search(allowUnknownParams=true)
 	public ca.uhn.fhir.rest.api.server.IBundleProvider search(
 			jakarta.servlet.http.HttpServletRequest theServletRequest,
@@ -484,8 +503,17 @@ public class ImplementationGuideProviderR4B extends ImplementationGuideResourceP
 				list.add(ig);
 			}
 
-			SimpleBundleProvider simpleBundleProivder = new SimpleBundleProvider(list);
-			return simpleBundleProivder;
+			final int offset = (theOffset == null ? 0 : theOffset);
+			final int count = (theCount == null ? 20 : theCount);
+			final int totalSize = list.size();
+			final int toIndex = Math.min(offset + count, totalSize);
+			final List<ImplementationGuide> paged = (offset < totalSize) ? list.subList(offset, toIndex) : List.of();
+
+			SimpleBundleProvider simpleBundleProvider = new SimpleBundleProvider(paged);
+			simpleBundleProvider.setSize(totalSize);
+			simpleBundleProvider.setCurrentPageOffset(offset);
+			simpleBundleProvider.setCurrentPageSize(count);
+			return simpleBundleProvider;
 
 		} finally {
 			endRequest(theServletRequest);
@@ -542,5 +570,10 @@ public class ImplementationGuideProviderR4B extends ImplementationGuideResourceP
 				.setPackageUrl("https://packages2.fhir.org/packages/%s/%s".formatted(packageId, packageVersion))
 				.setVersion(packageVersion)
 		);
+	}
+
+	@Override
+	public long count() {
+		return this.myPackageVersionDao.count();
 	}
 }

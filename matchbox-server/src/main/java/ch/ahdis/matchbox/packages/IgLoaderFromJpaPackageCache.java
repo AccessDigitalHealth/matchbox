@@ -10,9 +10,9 @@ import java.io.ByteArrayInputStream;
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -22,15 +22,20 @@ import java.io.ByteArrayInputStream;
  */
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import javax.annotation.Nonnull;
 
 import ch.ahdis.matchbox.engine.exception.MatchboxUnsupportedFhirVersionException;
+import ch.ahdis.matchbox.engine.packages.CompressedPackageResourceProxy;
+import ch.ahdis.matchbox.engine.packages.LazyTerminologyLoader;
+import ch.ahdis.matchbox.engine.packages.PackageResourceParser;
 import ch.ahdis.matchbox.util.MatchboxServerUtils;
 import org.hl7.fhir.convertors.factory.VersionConvertorFactory_30_50;
 import org.hl7.fhir.convertors.factory.VersionConvertorFactory_40_50;
@@ -46,8 +51,11 @@ import org.hl7.fhir.r5.model.PackageInformation;
 import org.hl7.fhir.r5.model.Resource;
 import org.hl7.fhir.utilities.ByteProvider;
 import org.hl7.fhir.utilities.FileUtilities;
+import org.hl7.fhir.utilities.Utilities;
+import org.hl7.fhir.utilities.VersionUtilities;
 import org.hl7.fhir.utilities.npm.FilesystemPackageCacheManager;
 import org.hl7.fhir.utilities.npm.NpmPackage;
+import org.hl7.fhir.utilities.npm.NpmPackage.PackageResourceInformation;
 import org.hl7.fhir.validation.IgLoader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -88,11 +96,24 @@ public class IgLoaderFromJpaPackageCache extends IgLoader {
 
 	private FhirContext myCtx;
 
+	/**
+	 * The resources of the packages that other engines have loaded, or null to not share them.
+	 */
+	private final SharedPackageResourcesCache sharedPackageResources;
+
+	/**
+	 * The types of the conformance resources that are loaded from a package.
+	 */
+	private static final Set<String> LOADED_RESOURCE_TYPES = Utilities.stringSet("NamingSystem", "CapabilityStatement",
+		"CodeSystem", "ValueSet", "StructureDefinition", "Measure", "Library", "ConceptMap", "SearchParameter",
+		"StructureMap", "Questionnaire", "OperationDefinition", "ActorDefinition", "Requirements");
+
 	public IgLoaderFromJpaPackageCache(FilesystemPackageCacheManager packageCacheManager, SimpleWorkerContext context,
 			String theVersion, boolean debug, IHapiPackageCacheManager myPackageCacheManager,
 			INpmPackageVersionDao myNpmPackageVersionDao, DaoRegistry myDaoRegistry, IBinaryStorageSvc myBinaryStorageSvc,
-			PlatformTransactionManager myTxManager) {
+			PlatformTransactionManager myTxManager, SharedPackageResourcesCache sharedPackageResources) {
 		super(packageCacheManager, context, theVersion, debug);
+		this.sharedPackageResources = sharedPackageResources;
 		this.myPackageCacheManager = myPackageCacheManager;
 		this.myNpmPackageVersionDao = myNpmPackageVersionDao;
 		this.myDaoRegistry = myDaoRegistry;
@@ -179,44 +200,24 @@ public class IgLoaderFromJpaPackageCache extends IgLoader {
 
 		switch (FhirVersionEnum.forVersionString(this.getVersion())) {
 			case R4, R4B -> {
-				if (src.startsWith("hl7.terminology#7.0.1")) {
+				if (src.startsWith("hl7.terminology#7.3.0")) {
 					log.info("Requesting to load '{}', loading '{}' instead'", src, PACKAGE_R4_TERMINOLOGY);
 					loadIg(igs, binaries, PACKAGE_R4_TERMINOLOGY, recursive);
 					return;
 				}
-				if (src.startsWith("hl7.terminology#6.5.0")) {
-					log.info("Requesting to load '{}', loading '{}' instead'", src, PACKAGE_R4_TERMINOLOGY65);
-					loadIg(igs, binaries, PACKAGE_R4_TERMINOLOGY65, recursive);
-					return;
-				}
-				if (src.startsWith("hl7.terminology#6.3.0")) {
-					log.info("Requesting to load '{}', loading '{}' instead'", src, PACKAGE_R4_TERMINOLOGY63);
-					loadIg(igs, binaries, PACKAGE_R4_TERMINOLOGY63, recursive);
-					return;
-				}
-				if (src.startsWith("hl7.fhir.uv.extensions#5.2.0")) {
+				if (src.startsWith("hl7.fhir.uv.extensions#5.3.0")) {
 					log.info("Requesting to load '{}', loading '{}' instead'", src, PACKAGE_R4_UV_EXTENSIONS);
 					loadIg(igs, binaries, PACKAGE_R4_UV_EXTENSIONS, recursive);
 					return;
 				}
 			}
 			case R5 -> {
-				if (src.startsWith("hl7.terminology#7.0.1")) {
+				if (src.startsWith("hl7.terminology#7.3.0")) {
 					log.info("Requesting to load '{}', loading '{}' instead'", src, PACKAGE_R5_TERMINOLOGY);
 					loadIg(igs, binaries, PACKAGE_R5_TERMINOLOGY, recursive);
 					return;
 				}
-				if (src.startsWith("hl7.terminology#6.5.0")) {
-					log.info("Requesting to load '{}', loading from classpath '{}' instead'", src, PACKAGE_R5_TERMINOLOGY65);
-					loadIg(igs, binaries, PACKAGE_R5_TERMINOLOGY65, recursive);
-					return;
-				}
-				if (src.startsWith("hl7.terminology#6.3.0")) {
-					log.info("Requesting to load '{}', loading from classpath '{}' instead'", src, PACKAGE_R5_TERMINOLOGY63);
-					loadIg(igs, binaries, PACKAGE_R5_TERMINOLOGY63, recursive);
-					return;
-				}
-				if (src.startsWith("hl7.fhir.uv.extensions#5.2.0")) {
+				if (src.startsWith("hl7.fhir.uv.extensions#5.3.0")) {
 					log.info("Requesting to load '{}', loading from classpath '{}' instead'", src, PACKAGE_R5_UV_EXTENSIONS);
 					loadIg(igs, binaries, PACKAGE_R5_UV_EXTENSIONS, recursive);
 					return;
@@ -228,12 +229,6 @@ public class IgLoaderFromJpaPackageCache extends IgLoader {
 		if (src.equals("hl7.fhir.cda#dev")) {
 			log.info("Replacing 'hl7.fhir.cda#dev' with '{}'", PACKAGE_CDA_UV_CORE);
 			loadIg(igs, binaries, PACKAGE_CDA_UV_CORE, recursive);
-			return;
-		}
-		if (src.equals("ch.fhir.ig.ch-term#current")) {
-			final var replace = "ch.fhir.ig.ch-term#3.2.0";
-			log.info("Replacing 'ch.fhir.ig.ch-term#current' with '{}'", replace);
-			loadIg(igs, binaries, replace, recursive);
 			return;
 		}
 		if (getContext().getLoadedPackages().contains(src)) {
@@ -251,15 +246,43 @@ public class IgLoaderFromJpaPackageCache extends IgLoader {
 				version = src.substring(src.indexOf("#") + 1);
 				id = src.substring(0, src.indexOf("#"));
 			}
-			NpmPackage npm = ((JpaPackageCache) myPackageCacheManager).loadPackageFromCacheOnly(id, version);
-			if (npm == null) {
+			final Optional<NpmPackageVersionEntity> packageVersion =
+				((JpaPackageCache) myPackageCacheManager).findPackageVersionFromCacheOnly(id, version);
+			if (packageVersion.isEmpty()) {
 				log.error("Package not found: " + id +" "+version );
 				return null;
 			}
-			for (final String dependency : npm.dependencies()) {
-				if (id.startsWith("hl7.terminology") && src.startsWith("hl7.fhir")) {
-					// FHIR Core should be loaded manually, see MatchboxEngineSupport.getMatchboxEngineNotSynchronized()
-					log.info("Ignoring dependency '{}' for '{}', circular dependency", dependency, id);
+			// The package archive is only read and unpacked if the metadata of the package isn't cached yet, or if no
+			// other engine has loaded its resources, and then only once (#609)
+			NpmPackage npm = null;
+			PackageMetadata metadata = this.sharedPackageResources == null ? null
+				: this.sharedPackageResources.getMetadata(getMetadataKey(packageVersion.get()));
+			if (metadata == null) {
+				npm = this.loadPackage(packageVersion.get());
+				metadata = new PackageMetadata(npm.name(), npm.version(), npm.dependencies(), getInternalDependencies(npm));
+				if (this.sharedPackageResources != null) {
+					this.sharedPackageResources.putMetadata(getMetadataKey(packageVersion.get()), metadata);
+				}
+			}
+			if (getContext().getLoadedPackages().contains(metadata.packageId())) {
+				// e.g. a dependency on ch.fhir.ig.ch-term#3.3.x that is resolved to an already loaded 3.3.0
+				log.info("Package '{}' already in context as '{}'", src, metadata.packageId());
+				return null;
+			}
+			for (final String dependency : metadata.dependencies()) {
+				if (VersionUtilities.isCorePackage(dependency)) {
+					// The FHIR core package is loaded manually for the FHIR version of the engine, see
+					// MatchboxEngineSupport.getMatchboxEngineNotLocked(). Loading the core package of another FHIR
+					// version as a dependency would add a second set of type definitions to the context, which makes the
+					// validation fail with 'Ambiguous type id'. The official validator skips core packages in the
+					// dependencies too, see org.hl7.fhir.validation.IgLoader#loadIg(..).
+					log.info("Ignoring core dependency '{}' for '{}'", dependency, src);
+					continue;
+				}
+				if (isCoreExamplesPackage(dependency)) {
+					// e.g. hl7.fhir.r4.examples#4.0.1 of hl7.fhir.uv.sdc, which HAPI doesn't install; MatchboxEngine.loadPackage()
+					// skips it too (#610)
+					log.info("Ignoring core examples dependency '{}' for '{}'", dependency, src);
 					continue;
 				}
 				log.debug("Loading depending package " + dependency + " for "+src);
@@ -270,41 +293,76 @@ public class IgLoaderFromJpaPackageCache extends IgLoader {
 				}
 				log.info("Finished loading depending package " + dependency + " for "+ src);
 			}
-			// use above version because of potential .x version we resolve in the cache
-			version = npm.version();
-			Optional<NpmPackageVersionEntity> npmPackage = myNpmPackageVersionDao.findByPackageIdAndVersion(id, version);
-			if (npmPackage.isPresent()) {
+			// Load internal dependencies declared in the ImplementationGuide resource (see #481)
+			for (final String internalDep : metadata.internalDependencies()) {
+				if (VersionUtilities.isCorePackage(internalDep)) {
+					log.info("Ignoring core internal dependency '{}' for '{}'", internalDep, src);
+					continue;
+				}
+				log.debug("Loading internal dependency " + internalDep + " for " + src);
+				try {
+					loadIg(igs, binaries, internalDep, recursive);
+				} catch (FHIRException | IOException e) {
+					log.warn("Failed to load internal dependency " + internalDep + " for " + src, e);
+				}
+				log.info("Finished loading internal dependency " + internalDep + " for " + src);
+			}
+			// The resources of a package that another engine has already loaded are shared, see
+			// SharedPackageResourcesCache. Engines are created in parallel (#616): an engine that needs a package that
+			// another engine is loading waits for it, and then registers the shared resources.
+			final Object loadingLock = this.sharedPackageResources == null ? new Object()
+				: this.sharedPackageResources.loadingLock(metadata.packageId());
+			synchronized (loadingLock) {
+				final SharedPackageResources cached = this.sharedPackageResources == null ? null
+					: this.sharedPackageResources.get(metadata.packageId());
+				if (cached != null) {
+					cached.registerIn(getContext());
+					log.info("Registered the {} conformance resources of package {} that another engine has loaded",
+								cached.size(), metadata.packageId());
+					return null;
+				}
 				int count = 0;
 				log.info("Loading package " + src);
 
 				// this way we have 0.5 seconds per 100 resources (eg hl7.fhir.r4.core has 15 seconds for 3128 resources)
-				NpmPackage pi = this.loadPackage(npmPackage.get());
+				final NpmPackage pi = npm != null ? npm : this.loadPackage(packageVersion.get());
 				PackageInformation packageInfo = new PackageInformation(pi);
 				getContext().getLoadedPackages().add(pi.name() + "#" + pi.version());
-				
+				final SharedPackageResources shared = new SharedPackageResources(pi.name() + "#" + pi.version(),
+																									  packageInfo);
+				getContext().retain(shared);
+
+				final String fhirVersion = pi.fhirVersion();
 				try {
-					for (String s : pi.listResources("NamingSystem", "CapabilityStatement", "CodeSystem", "ValueSet", "StructureDefinition", "Measure", "Library",
-					"ConceptMap", "SearchParameter", "StructureMap", "Questionnaire", "OperationDefinition","ActorDefinition","Requirements")) {
+					// The terminology resources are registered with the metadata of the package index and parsed when
+					// they're first used (lazy loading), like the core validator does for packages on the filesystem. Most
+					// of them, e.g. of the several versions of hl7.terminology that the dependencies pull in, are never
+					// used for a validation.
+					for (final PackageResourceInformation pri : pi.listIndexedResources(LOADED_RESOURCE_TYPES)) {
+						final String s = LazyTerminologyLoader.getPackageFolderFilename(pri);
+						if (s == null) {
+							continue;
+						}
 						++count;
-						Resource r = null;
 						try {
-							r = loadResourceByVersion(npm.fhirVersion(), FileUtilities.streamToBytes(pi.load("package", s)), s);
-							// https://github.com/ahdis/matchbox/issues/227
-							if (r instanceof org.hl7.fhir.r5.model.StructureMap ) {
-								cleanModifierExtensions((org.hl7.fhir.r5.model.StructureMap) r);
-							}			
-							if (r instanceof org.hl7.fhir.r5.model.ConceptMap ) {
-								cleanModifierExtensions((org.hl7.fhir.r5.model.ConceptMap) r);
-							}			
-							if (r instanceof CanonicalResource) {
-								// go through context to replace to newer version if needed (see ahdis/matchbox#447)
-								this.getContext().cacheResourceFromPackage(r, packageInfo);
-							} else {
-								log.error("Resource is not a CanonicalResource: " + r.getClass().getName() + " from package " +pi.name() + "#" + pi.version());
+							final byte[] content = FileUtilities.streamToBytes(pi.load("package", s));
+							if (!LazyTerminologyLoader.canLoadLazily(pri)) {
+								final Resource r = parsePackageResource(fhirVersion, content);
+								if (cacheResource(r, packageInfo)) {
+									shared.addResource(r);
+								}
+								continue;
 							}
-						} catch (FHIRException e) {
-							log.error(s, e);
-						} catch (IOException e) {
+							final CompressedPackageResourceProxy proxy = new CompressedPackageResourceProxy(
+								pri, pri.getUrl(), s, content, (bytes, filename) -> parsePackageResource(fhirVersion, bytes),
+								packageInfo);
+							final LazyTerminologyLoader.OidRegistration oids =
+								LazyTerminologyLoader.registerProxy(getContext(), proxy, pri, content, packageInfo);
+							shared.addProxy(proxy);
+							if (oids != null) {
+								shared.addOids(oids);
+							}
+						} catch (FHIRException | IOException e) {
 							log.error(s, e);
 						}
 					}
@@ -314,26 +372,98 @@ public class IgLoaderFromJpaPackageCache extends IgLoader {
 				}
 
 				log.info("Finished loading " + count + " conformance resources for package " + pi.name() + "#" + pi.version());
-
-				// with hsql or psql this slow around 7 seconds per 100 resources (oe dev)
-				// machine)
-				// lets load the package directly
-//				List<NpmPackageVersionResourceEntity> resources = npmPackage.get().getResources();
-//				for (NpmPackageVersionResourceEntity resource: resources) {
-//					++count;
-//					if (count % 100 == 0) {
-//						log.info(" ... loading "+count);
-//					}
-//					this.getContext().cacheResource(loadPackageEntity(resource));
-//				}
-//s				this.getContext().getLoadedPackages().add(id + "#" + version);
-
-
-			} else {
-				throw new RuntimeException(Msg.code(1305) + "Failed to load package resource " + src);
+				if (this.sharedPackageResources != null) {
+					this.sharedPackageResources.put(shared);
+				}
 			}
+
+			// with hsql or psql this slow around 7 seconds per 100 resources (oe dev)
+			// machine)
+			// lets load the package directly
+//			List<NpmPackageVersionResourceEntity> resources = npmPackage.get().getResources();
+//			for (NpmPackageVersionResourceEntity resource: resources) {
+//				++count;
+//				if (count % 100 == 0) {
+//					log.info(" ... loading "+count);
+//				}
+//				this.getContext().cacheResource(loadPackageEntity(resource));
+//			}
+//s				this.getContext().getLoadedPackages().add(id + "#" + version);
 			return null;
 		});
+	}
+
+	/**
+	 * The metadata of a package version is cached by the id of its package archive (Binary), which is new when the
+	 * package version is installed again.
+	 */
+	private static long getMetadataKey(final NpmPackageVersionEntity packageVersion) {
+		return packageVersion.getPackageBinary().getId().getId();
+	}
+
+	/**
+	 * Whether a package is the examples package of a FHIR version, like NpmPackage.isCoreExamples().
+	 */
+	private static boolean isCoreExamplesPackage(final String packageId) {
+		final String name = packageId.contains("#") ? packageId.substring(0, packageId.indexOf("#")) : packageId;
+		return name.startsWith("hl7.fhir.r") && name.endsWith(".examples");
+	}
+
+	private Resource parsePackageResource(final String fhirVersion, final byte[] content)
+			throws IOException {
+		// Not IgLoader.loadResourceByVersion(), it rejects file names ending with template.json (#610)
+		final Resource r = PackageResourceParser.parseJson(fhirVersion, content);
+		// https://github.com/ahdis/matchbox/issues/227
+		if (r instanceof final org.hl7.fhir.r5.model.StructureMap sm) {
+			cleanModifierExtensions(sm);
+		}
+		if (r instanceof final org.hl7.fhir.r5.model.ConceptMap cm) {
+			cleanModifierExtensions(cm);
+		}
+		return r;
+	}
+
+	private boolean cacheResource(final Resource r, final PackageInformation packageInfo) {
+		if (r instanceof CanonicalResource) {
+			// go through context to replace to newer version if needed (see ahdis/matchbox#447)
+			this.getContext().cacheResourceFromPackage(r, packageInfo);
+			return true;
+		}
+		log.error("Resource is not a CanonicalResource: " + r.getClass().getName() + " from package "
+						 + packageInfo.getVID());
+		return false;
+	}
+
+	/**
+	 * Extracts internal dependencies from the ImplementationGuide resource in the package.
+	 * These are declared via the ig-internal-dependency extension in the IG definition,
+	 * and are not listed in package.json dependencies.
+	 * See https://github.com/ahdis/matchbox/issues/481
+	 */
+	private List<String> getInternalDependencies(NpmPackage npm) {
+		List<String> result = new ArrayList<>();
+		try {
+			for (String s : npm.listResources("ImplementationGuide")) {
+				byte[] content = FileUtilities.streamToBytes(npm.load("package", s));
+				org.hl7.fhir.utilities.json.model.JsonObject igJson =
+					org.hl7.fhir.utilities.json.parser.JsonParser.parseObject(content);
+				org.hl7.fhir.utilities.json.model.JsonObject definition = igJson.getJsonObject("definition");
+				if (definition != null && definition.has("extension")) {
+					for (org.hl7.fhir.utilities.json.model.JsonObject ext : definition.getJsonObjects("extension")) {
+						String url = ext.asString("url");
+						if ("http://hl7.org/fhir/tools/StructureDefinition/ig-internal-dependency".equals(url)) {
+							String value = ext.asString("valueCode");
+							if (value != null && value.contains("#") && !value.startsWith("hl7.fhir.uv.tools")) {
+								result.add(value);
+							}
+						}
+					}
+				}
+			}
+		} catch (IOException e) {
+			log.warn("Failed to read ImplementationGuide resources from package {}: {}", npm.name(), e.getMessage());
+		}
+		return result;
 	}
 
 	private NpmPackage loadPackage(NpmPackageVersionEntity thePackageVersion) {

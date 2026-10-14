@@ -25,80 +25,104 @@ import ca.uhn.fhir.jpa.dao.data.INpmPackageVersionResourceDao;
 import ca.uhn.fhir.rest.annotation.Operation;
 import ca.uhn.fhir.rest.annotation.OperationParam;
 import ca.uhn.fhir.rest.api.EncodingEnum;
+import ca.uhn.fhir.rest.api.server.RequestDetails;
+import ca.uhn.fhir.rest.server.exceptions.BaseServerResponseException;
 import ca.uhn.fhir.util.StopWatch;
 import ch.ahdis.matchbox.CliContext;
+import ch.ahdis.matchbox.config.MatchboxFhirVersion;
+import ch.ahdis.matchbox.config.property.MatchboxFhirProperties;
+import ch.ahdis.matchbox.statistics.OperationOutcomeResourceProviderR4;
+import ch.ahdis.matchbox.statistics.OperationOutcomeResourceProviderR4B;
+import ch.ahdis.matchbox.statistics.OperationOutcomeResourceProviderR5;
 import ch.ahdis.matchbox.util.MatchboxEngineSupport;
-import ch.ahdis.matchbox.validation.matchspark.LLMConnector;
+import ch.ahdis.matchbox.util.metrics.MatchboxMetrics;
+import ch.ahdis.matchbox.validation.matchspark.LlmConnector;
 import ch.ahdis.matchbox.engine.MatchboxEngine;
 import ch.ahdis.matchbox.engine.cli.VersionUtil;
-import ch.ahdis.matchbox.engine.exception.MatchboxUnsupportedFhirVersionException;
 import ch.ahdis.matchbox.packages.MatchboxImplementationGuideProvider;
-import ch.ahdis.matchbox.registry.SimplifierPackage;
-import ch.ahdis.matchbox.registry.SimplifierPackageVersionsObject;
-import com.google.gson.Gson;
+import dev.langchain4j.model.chat.listener.ChatModelListener;
 import org.apache.commons.beanutils.BeanUtils;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
 import org.checkerframework.checker.nullness.qual.NonNull;
-import org.hl7.fhir.convertors.factory.VersionConvertorFactory_40_50;
-import org.hl7.fhir.convertors.factory.VersionConvertorFactory_43_50;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.hl7.fhir.instance.model.api.IBase;
+import org.hl7.fhir.instance.model.api.IBaseOperationOutcome;
 import org.hl7.fhir.instance.model.api.IBaseResource;
-import org.hl7.fhir.r5.model.CodeableConcept;
+import org.hl7.fhir.r5.model.*;
 import org.hl7.fhir.r5.elementmodel.Manager.FhirFormat;
 import org.hl7.fhir.r5.extensions.ExtensionDefinitions;
-import org.hl7.fhir.r5.model.Duration;
-import org.hl7.fhir.r5.model.OperationOutcome;
-import org.hl7.fhir.r5.model.StringType;
 import org.hl7.fhir.r5.utils.EOperationOutcome;
-import org.hl7.fhir.r5.model.UriType;
 import org.hl7.fhir.r5.utils.OperationOutcomeUtilities;
 import org.hl7.fhir.utilities.validation.ValidationMessage;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import ch.ahdis.matchbox.validation.matchspark.LlmErrorMessage;
 
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
-import javax.annotation.Nullable;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
+import static ch.ahdis.matchbox.config.MatchboxFhirVersion.convertToR4;
+import static ch.ahdis.matchbox.config.MatchboxFhirVersion.convertToR4B;
 import static ch.ahdis.matchbox.util.MatchboxServerUtils.addExtension;
 
 /**
  * The HAPI provider of the operation $validate
  */
 public class ValidationProvider {
-
 	private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ValidationProvider.class);
+
+	public static final String PARAM_ANALYZE_ERRORS_WITH_LLM = "analyzeErrorsWithLlm";
+	public static final String PARAM_LLM_PROVIDER = "llmProvider";
+	public static final String PARAM_LLM_MODEL_NAME = "llmModelName";
+	public static final String PARAM_LLM_API_KEY = "llmApiKey";
+	public static final String OPERATION_VALIDATE = "$validate";
+	private static final String BASE_DEFINITION_PREFIX = "http://hl7.org/fhir/StructureDefinition/";
 
 	@Autowired
 	protected MatchboxEngineSupport matchboxEngineSupport;
 
 	@Autowired
+	protected MatchboxFhirProperties matchboxProps;
+
+	@Autowired
 	protected CliContext cliContext;
 
 	@Autowired
-	private FhirContext myContext;
+	private MatchboxFhirVersion matchboxFhirVersion;
 
 	@Autowired
 	private MatchboxImplementationGuideProvider igProvider;
 	@Autowired
 	private INpmPackageVersionResourceDao myPackageVersionResourceDao;
 
-	@Autowired
-	private PlatformTransactionManager myTxManager;
+	@Autowired(required = false)
+	private Optional<OperationOutcomeResourceProviderR4> operationOutcomeResourceProviderR4;
+
+	@Autowired(required = false)
+	private Optional<OperationOutcomeResourceProviderR4B> operationOutcomeResourceProviderR4B;
+
+	@Autowired(required = false)
+	private Optional<OperationOutcomeResourceProviderR5> operationOutcomeResourceProviderR5;
+
+	@Autowired(required = false)
+	private Optional<MatchboxMetrics> matchboxMetrics;
+
+	/**
+	 * The langchain4j {@link ChatModelListener} beans (e.g. Micrometer/Observation listeners registered in
+	 * {@link ch.ahdis.matchbox.config.MatchboxMetricsConfig}) to attach to the AI chat model built by
+	 * {@link LLMConnector}, so that gen_ai.* metrics are actually recorded.
+	 */
+	@Autowired(required = false)
+	private List<ChatModelListener> chatModelListeners = List.of();
 
 //	@Operation(name = "$canonical", manualRequest = true, idempotent = true, returnParameters = {
 //			@OperationParam(name = "return", type = IBase.class, min = 1, max = 1) })
@@ -120,10 +144,47 @@ public class ValidationProvider {
 //		return null;
 //	}
 
-	@Operation(name = "$validate", manualRequest = true, idempotent = true, returnParameters = {
+	/**
+	 * The operation $validate, on the system level ({@code [base]/$validate}) and on the type level
+	 * ({@code [base]/{Type}/$validate}, for any resource type).
+	 * <p>
+	 * HAPI binds this method on the system level only, {@link ch.ahdis.matchbox.MatchboxRestfulServer} routes the
+	 * type-level requests to it. The resource type of the request tells which one it is.
+	 */
+	@Operation(name = OPERATION_VALIDATE, manualRequest = true, idempotent = true, returnParameters = {
 		@OperationParam(name = "return", type = IBase.class, min = 1, max = 1)})
-	public IBaseResource validate(final HttpServletRequest theRequest) {
+	public IBaseResource validate(final HttpServletRequest theRequest, final RequestDetails theRequestDetails) {
+		try {
+			// validate
+			final var response = this.getValidation(theRequest, theRequestDetails.getResourceName());
+
+			// check if validation response is an OperationOutcome and store it
+			if (response instanceof final OperationOutcome operationOutcome) {
+				this.saveOperationOutcome(operationOutcome);
+			}
+
+			// returns response in correct FHIR version
+			return this.matchboxFhirVersion.convertForResponse(response);
+		} catch (final BaseServerResponseException hapiException) {
+			// check if exception contains a OperationOutcome
+			final IBaseOperationOutcome operationOutcome = hapiException.getOperationOutcome();
+
+			// store OperationOutcome
+			if (operationOutcome != null) {
+				this.saveOperationOutcome(MatchboxFhirVersion.convertToR5(operationOutcome, OperationOutcome.class));
+			}
+
+			// rethrow the exception
+			throw hapiException;
+		}
+	}
+
+	/**
+	 * @param type the resource type of a type-level request, {@code null} on the system level.
+	 */
+	private OperationOutcome getValidation(final HttpServletRequest theRequest, final @Nullable String type) {
 		log.debug("$validate");
+		this.matchboxMetrics.ifPresent(MatchboxMetrics::addValidation);
 
 		final var sw = new StopWatch();
 		sw.startTask("Total");
@@ -141,11 +202,11 @@ public class ValidationProvider {
 				if (theRequest.getParameterValues(cliContextProperty) != null) {
 					try {
 						final String[] value = theRequest.getParameterValues(cliContextProperty);
-  						field.setAccessible(true);
-            			field.set(cliContext, value);
+						field.setAccessible(true);
+						field.set(cliContext, value);
 					} catch (final IllegalAccessException e) {
 						log.error("error setting property %s to %s".formatted(cliContextProperty,
-																								theRequest.getParameter(cliContextProperty)));
+							theRequest.getParameter(cliContextProperty)));
 					}
 				}
 			} else {
@@ -160,16 +221,16 @@ public class ValidationProvider {
 						}
 					} catch (final IllegalAccessException | InvocationTargetException e) {
 						log.error("error setting property %s to %s".formatted(cliContextProperty,
-																								theRequest.getParameter(cliContextProperty)));
+							theRequest.getParameter(cliContextProperty)));
 					}
 				}
 			}
 		}
 
-		if (theRequest.getParameter("profile") == null) {
+		String profile = theRequest.getParameter("profile");
+		if (profile == null && type == null) {
 			return this.getOoForError("The 'profile' parameter must be provided");
 		}
-		String profile = theRequest.getParameter("profile");
 
 		boolean reload = false;
 		if (theRequest.getParameter("reload") != null) {
@@ -187,6 +248,33 @@ public class ValidationProvider {
 			return this.getOoForError("No content provided in HTTP body");
 		} else {
 			log.trace(contentString);
+		}
+
+		EncodingEnum encoding = EncodingEnum.forContentType(theRequest.getContentType());
+		if (encoding == null) {
+			encoding = EncodingEnum.detectEncoding(contentString);
+		}
+
+		// On the type level, the resource may be wrapped in a Parameters and the profile is optional
+		final List<String> otherMetaProfiles = new ArrayList<>();
+		if (type != null) {
+			final ValidationContent content;
+			try {
+				content = ValidationContent.resolve(contentString, encoding, type);
+			} catch (final ValidationContent.ValidationContentException e) {
+				return this.getOoForError(e.getMessage());
+			}
+			contentString = content.content();
+			if (profile == null) {
+				profile = content.envelopeProfile();
+			}
+			if (profile == null && !content.metaProfiles().isEmpty()) {
+				profile = content.metaProfiles().getFirst();
+				otherMetaProfiles.addAll(content.metaProfiles().subList(1, content.metaProfiles().size()));
+			}
+			if (profile == null) {
+				profile = BASE_DEFINITION_PREFIX + type;
+			}
 		}
 
 		final MatchboxEngine engine;
@@ -215,11 +303,6 @@ public class ValidationProvider {
 
 		final String sha3Hex = new DigestUtils("SHA3-256").digestAsHex(contentString + profile);
 
-		EncodingEnum encoding = EncodingEnum.forContentType(theRequest.getContentType());
-		if (encoding == null) {
-			encoding = EncodingEnum.detectEncoding(contentString);
-		}
-
 		final List<ValidationMessage> messages;
 		try {
 			messages = doValidate(engine, contentString, encoding, profile);
@@ -232,55 +315,66 @@ public class ValidationProvider {
 
 		long millis = sw.getMillis();
 		log.debug("Validation time: {}", sw);
+		this.matchboxMetrics.ifPresent(m -> m.addValidationDuration(java.time.Duration.ofMillis(millis)));
 
-		var oo = this.getOperationOutcome(sha3Hex, messages, profile, engine, millis, cliContext);
-
-		Boolean aiAnalyze = null;
-		// check if the request ai analyze parameter is set to true or false
-		if (theRequest.getParameter("analyzeOutcomeWithAI") != null) {
-			aiAnalyze = Boolean.parseBoolean(theRequest.getParameter("analyzeOutcomeWithAI"));
+		final OperationOutcome oo = this.getOperationOutcome(sha3Hex, messages, profile, engine, millis, cliContext);
+		if (!otherMetaProfiles.isEmpty()) {
+			oo.addIssue()
+				.setSeverity(OperationOutcome.IssueSeverity.INFORMATION)
+				.setCode(OperationOutcome.IssueType.INFORMATIONAL)
+				.setDiagnostics(
+					"The resource declares several profiles in meta.profile, the validation engine was selected for the first one, '%s'. The other ones are only validated if this engine knows them: %s".formatted(
+						profile, String.join(", ", otherMetaProfiles)));
 		}
 
-		Boolean aiAnalyzeOnError = cliContext.getAnalyzeOutcomeWithAIOnError();
+		// Check if we should analyze errors with LLM, either from the request parameter or from the configuration
+		boolean analyzeErrorsWithLlm = this.matchboxProps.getValidation().isAnalyzeErrorsWithLlm();
+		if (theRequest.getParameter(PARAM_ANALYZE_ERRORS_WITH_LLM) != null) {
+			analyzeErrorsWithLlm = Boolean.parseBoolean(theRequest.getParameter(PARAM_ANALYZE_ERRORS_WITH_LLM));
+		}
 
-		boolean hasError = false;
-		if (aiAnalyzeOnError != null && aiAnalyzeOnError) {
-			for (final ValidationMessage message : messages) {
-				if (message.getLevel() == ValidationMessage.IssueSeverity.ERROR || message.getLevel() == ValidationMessage.IssueSeverity.FATAL) {
-					hasError = true;
-					break;
+		if (analyzeErrorsWithLlm && hasError(oo)) {
+			// Use the Matchbox LLM configuration, and update it with the request parameters if provided
+			final var llmConnectorConfig = this.matchboxProps.getContext().getLlm().clone();
+			if (theRequest.getParameter(PARAM_LLM_PROVIDER) != null) {
+				llmConnectorConfig.setProvider(theRequest.getParameter(PARAM_LLM_PROVIDER));
+			}
+			if (theRequest.getParameter(PARAM_LLM_MODEL_NAME) != null) {
+				llmConnectorConfig.setModelName(theRequest.getParameter(PARAM_LLM_MODEL_NAME));
+			}
+			if (theRequest.getParameter(PARAM_LLM_API_KEY) != null) {
+				llmConnectorConfig.setApiKey(theRequest.getParameter(PARAM_LLM_API_KEY));
+			}
+
+			if (!llmConnectorConfig.isValid()) {
+				log.debug("LLM configuration is not valid, skipping AI analysis");
+				oo.addIssue()
+					.setSeverity(OperationOutcome.IssueSeverity.WARNING)
+					.setCode(OperationOutcome.IssueType.REQUIRED)
+					.setDiagnostics("The error outcome analysis was requested but the LLM configuration is invalid");
+			} else {
+				try {
+					final var openAIConnector = LlmConnector.getConnector(llmConnectorConfig, this.chatModelListeners);
+					final String json = FhirContext.forR5Cached().newJsonParser().encodeResourceToString(oo);
+					final String aiResult = openAIConnector.interpretWithMatchbox(contentString, json);
+					this.addAIIssueToOperationOutcome(oo, aiResult);
+				} catch (final Exception e) {
+					log.error("Error during AI analysis", e);
+					// add the error to the OperationOutcome, so the client still gets the validation result
+					this.addExceptionToOperationOutcome(oo, e);
 				}
 			}
 		}
-		if ((aiAnalyze != null && aiAnalyze) || (aiAnalyze == null && aiAnalyzeOnError != null && aiAnalyzeOnError && hasError)) {
-			try {
-				LLMConnector openAIConnector = LLMConnector.getConnector(cliContext);
-				String json = FhirContext.forR5().newJsonParser().setPrettyPrint(true).encodeResourceToString(oo);
-				String aiResult = openAIConnector.interpretWithMatchbox(contentString, json);
-				oo = this.addAIIssueToOperationOutcome(oo, aiResult);
-			} catch (Exception e) {
-				log.error("Error during AI analysis", e);
-				// add the error to the OperationOutcome, so the client still gets the validation result
-				oo = this.addExceptionToOperationOutcome(oo, e);
-			}
-		}
 
-		
-		return switch (this.myContext.getVersion().getVersion()) {
-			case R4 -> VersionConvertorFactory_40_50.convertResource((OperationOutcome) oo);
-			case R4B -> VersionConvertorFactory_43_50.convertResource((OperationOutcome) oo);
-			case R5 -> oo;
-			default -> throw new MatchboxUnsupportedFhirVersionException("ValidationProvider",
-																							 this.myContext.getVersion().getVersion());
-		};
+		return oo;
 	}
 
-	private IBaseResource getOperationOutcome(final String id,
-															final List<ValidationMessage> messages,
-															final String profile,
-															final MatchboxEngine engine,
-															final long ms,
-															final CliContext cliContext) {
+	private OperationOutcome getOperationOutcome(final String id,
+																final List<ValidationMessage> messages,
+																final String profile,
+																final MatchboxEngine engine,
+																final long ms,
+																final CliContext cliContext) {
 		final var oo = new OperationOutcome();
 		oo.setId(id);
 
@@ -302,10 +396,14 @@ public class ValidationProvider {
 					structDefR5.getVersion(),
 					profileDate,
 					String.join(", ", engine.getContext().getLoadedPackages()),
-					ms/1000.0+ "s",
+					ms / 1000.0 + "s",
 					VersionUtil.getPoweredBy(),
 					cliContext.toString()
 				));
+
+			// Set the validator version, as per the FHIR Tooling Extensions
+			oo.addExtension("http://hl7.org/fhir/tools/StructureDefinition/validator-version",
+								 new StringType(VersionUtil.getPoweredBy()));
 
 			var ext = issue.addExtension().setUrl("http://matchbox.health/validation");
 			addExtension(ext, "profile", new UriType(structDefR5.getUrl()));
@@ -315,18 +413,23 @@ public class ValidationProvider {
 			ext.addExtension("total", new Duration().setUnit("ms").setValue(ms));
 			addExtension(ext, "validatorVersion", new StringType(VersionUtil.getPoweredBy()));
 			cliContext.addContextToExtension(ext);
-			if (matchboxEngineSupport.getSessionId(engine) != null) {
-				addExtension(ext, "sessionId", new StringType(matchboxEngineSupport.getSessionId(engine)));
+			ext.addExtension("onlyOneEngine", new BooleanType(this.matchboxProps.getContext().isOnlyOneEngine()));
+			ext.addExtension("httpReadOnly", new BooleanType(this.matchboxProps.getContext().isHttpReadOnly()));
+			ext.addExtension("ssrfProtectionEnabled", new BooleanType(this.matchboxProps.getContext().isSsrfProtectionEnabled()));
+
+			final var sessionId = this.matchboxEngineSupport.getSessionId(engine);
+			if (sessionId != null) {
+				addExtension(ext, "sessionId", new StringType(sessionId));
 			}
 			for (final String pkg : engine.getContext().getLoadedPackages()) {
 				addExtension(ext, "package", new StringType(pkg));
 			}
 			for (final String suppressedWarning : engine.getSuppressedWarnInfoPatterns()) {
 				addExtension(ext, "suppressedWarning", new StringType(suppressedWarning));
-			}		
+			}
 			for (final String suppressedError : engine.getSuppressedErrors()) {
 				addExtension(ext, "suppressedError", new StringType(suppressedError));
-			}		
+			}
 		}
 
 		// Map the SingleValidationMessages to OperationOutcomeIssue
@@ -374,20 +477,20 @@ public class ValidationProvider {
 		return oo;
 	}
 
-	private IBaseResource getOoForError(final @NonNull String message) {
+	private OperationOutcome getOoForError(final @NonNull String message) {
 		final var oo = new OperationOutcome();
 		final var issue = oo.addIssue();
 		issue.setSeverity(OperationOutcome.IssueSeverity.ERROR);
 		issue.setCode(OperationOutcome.IssueType.EXCEPTION);
 		issue.setDiagnostics(message);
 		issue.addExtension().setUrl(ExtensionDefinitions.EXT_ISSUE_SOURCE).setValue(new StringType("ValidationProvider"));
-		return VersionConvertorFactory_40_50.convertResource(oo);
+		return oo;
 	}
 
 	public static List<ValidationMessage> doValidate(final MatchboxEngine engine,
-									 String content,
-									 final EncodingEnum encoding,
-									 final String profile) throws EOperationOutcome, IOException {
+																	 String content,
+																	 final EncodingEnum encoding,
+																	 final String profile) throws EOperationOutcome {
 		final List<ValidationMessage> messages = new ArrayList<>();
 
 		if (content.startsWith("\uFEFF")) {
@@ -410,7 +513,7 @@ public class ValidationProvider {
 			final var m = new ValidationMessage();
 			m.setLevel(ValidationMessage.IssueSeverity.FATAL);
 			m.setMessage(
-				"Internal validation exception, contact support "+e.getMessage());
+				"Internal validation exception, contact support " + e.getMessage());
 			m.setCol(0);
 			m.setLine(0);
 			messages.add(m);
@@ -418,33 +521,89 @@ public class ValidationProvider {
 		return messages;
 	}
 
-	public IBaseResource addAIIssueToOperationOutcome(IBaseResource resource, String aiResponse) {
-		if (resource instanceof final OperationOutcome outcome) {
-			final var details = new CodeableConcept();
-			details.setText("AI Analyze of the Operation Outcome");
+	public void addAIIssueToOperationOutcome(final OperationOutcome outcome, final String aiResponse) {
+		final var details = new CodeableConcept();
+		details.setText("AI Analyze of the Operation Outcome");
 
-			outcome.addIssue()
-				.setSeverity(OperationOutcome.IssueSeverity.INFORMATION)
-				.setCode(OperationOutcome.IssueType.INFORMATIONAL)
-				.setDiagnostics(aiResponse)
-				.setDetails(details)
-				.addExtension()
-					.setUrl("http://hl7.org/fhir/StructureDefinition/rendering-style")
-					.setValue(new StringType("markdown"));
-
-			return outcome;
-		}
-		throw new IllegalArgumentException("Provided resource is not an OperationOutcome.");
+		outcome.addIssue()
+			.setSeverity(OperationOutcome.IssueSeverity.INFORMATION)
+			.setCode(OperationOutcome.IssueType.INFORMATIONAL)
+			.setDiagnostics(aiResponse)
+			.setDetails(details)
+			.addExtension()
+			.setUrl("http://hl7.org/fhir/StructureDefinition/rendering-style")
+			.setValue(new StringType("markdown"));
 	}
 
-	public IBaseResource addExceptionToOperationOutcome(IBaseResource resource, Exception e) {
-		if (resource instanceof final OperationOutcome outcome) {
-			outcome.addIssue()
-				.setSeverity(OperationOutcome.IssueSeverity.ERROR)
-				.setCode(OperationOutcome.IssueType.EXCEPTION)
-				.setDiagnostics(e.getLocalizedMessage());
-			return outcome;
+	public void addExceptionToOperationOutcome(final OperationOutcome outcome, final Exception e) {
+		var message = e.getMessage();
+		if (message != null && message.strip().startsWith("{")) {
+			try {
+				// This is a best effort to extract a "message" field from a JSON error response from an LLM provider
+				final ObjectMapper om = new ObjectMapper();
+				final LlmErrorMessage parsed = om.readValue(message, LlmErrorMessage.class);
+				if (parsed != null) {
+					if (parsed.getMessage() != null && !parsed.getMessage().isBlank()) {
+						message = parsed.getMessage();
+					} else if (parsed.getError() != null) {
+						final LlmErrorMessage.ErrorObject err = parsed.getError();
+						if (err.getMessage() != null && !err.getMessage().isBlank()) {
+							message = err.getMessage();
+						} else if (err.getErrors() != null && !err.getErrors().isEmpty()) {
+							final LlmErrorMessage.FieldError fe = err.getErrors().getFirst();
+							if (fe.getMessage() != null && !fe.getMessage().isBlank()) {
+								message = fe.getMessage();
+							}
+						} else if (err.getInfo() != null && !err.getInfo().isEmpty()) {
+							message = err.getInfo().toString();
+						}
+					}
+				}
+			} catch (final Exception ex) {
+				// Not a big deal, we just couldn't parse the JSON error message, so we will use the original JSON string
+				log.debug("Could not parse LLM JSON error message: {}", ex.getMessage());
+			}
 		}
-		throw new IllegalArgumentException("Provided resource is not an OperationOutcome.");
+
+		outcome.addIssue()
+			.setSeverity(OperationOutcome.IssueSeverity.ERROR)
+			.setCode(OperationOutcome.IssueType.EXCEPTION)
+			.setDiagnostics(message);
+	}
+
+	public void saveOperationOutcome(final OperationOutcome operationOutcome) {
+		// checks if all operationOutcomeResourceProviders are empty (indicating that save-statistics = false
+		// and operationOutcome is valid)
+		boolean hasNoOperationOutcomeResourceProvider = operationOutcomeResourceProviderR4.isEmpty()
+																&& operationOutcomeResourceProviderR4B.isEmpty()
+																&& operationOutcomeResourceProviderR5.isEmpty();
+
+		if (hasNoOperationOutcomeResourceProvider || operationOutcome == null) {
+			return;
+		}
+
+		operationOutcome.setId(UUID.randomUUID().toString());
+		operationOutcome.getMeta().setSource("matchbox-validation");
+
+		// uses the correct ResourceProvider for the server version. Gets the dao from the rp and stores the
+		// OperationOutcome. Converts to R4 or R4B first if needed.
+		this.matchboxFhirVersion.execute(
+			() -> this.operationOutcomeResourceProviderR4.ifPresent(rp -> rp.getDao().create(convertToR4(operationOutcome, org.hl7.fhir.r4.model.OperationOutcome.class))),
+			() -> this.operationOutcomeResourceProviderR4B.ifPresent(rp -> rp.getDao().create(convertToR4B(operationOutcome, org.hl7.fhir.r4b.model.OperationOutcome.class))),
+			() -> this.operationOutcomeResourceProviderR5.ifPresent(rp -> rp.getDao().create(operationOutcome))
+		);
+	}
+
+	private boolean hasError(final OperationOutcome operationOutcome) {
+		if (operationOutcome == null || operationOutcome.getIssue() == null) {
+			return false;
+		}
+		for (final OperationOutcome.OperationOutcomeIssueComponent issue : operationOutcome.getIssue()) {
+			if (issue.getSeverity() == OperationOutcome.IssueSeverity.ERROR || issue.getSeverity() == OperationOutcome.IssueSeverity.FATAL) {
+				return true;
+			}
+		}
+		return false;
 	}
 }
+

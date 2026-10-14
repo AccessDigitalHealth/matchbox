@@ -1,13 +1,17 @@
 package ch.ahdis.matchbox.engine.tests;
 
 import ch.ahdis.matchbox.engine.MatchboxEngine;
+
+import org.hl7.fhir.exceptions.FHIRException;
 import org.hl7.fhir.r4.model.OperationOutcome;
 import org.hl7.fhir.r5.elementmodel.Manager;
 import org.hl7.fhir.r5.utils.EOperationOutcome;
-import org.hl7.fhir.utilities.FhirPublication;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +43,12 @@ class R4ValidationTests {
 		this.careplanRaw = this.loadSample("careplan.xml");
 		this.measureRaw = this.loadSample("measure.xml");
 		this.relatedPerson = this.loadSample("RelatedPerson-BiologicalFather.json");
+	}
+
+	@BeforeEach
+	void resetEngine() {
+		this.engine.setAnyExtensionsAllowed(false);
+		this.engine.setExtensionDomains(List.of());
 	}
 
 	/**
@@ -87,7 +97,11 @@ class R4ValidationTests {
 	void testIgnoreErrors() throws Exception {
 		final var errors = this.expectInvalid(this.relatedPerson, Manager.FhirFormat.JSON, "http://hl7.org/fhir/StructureDefinition/RelatedPerson");
 		assertEquals(1, errors.size());
-		assertTrue(errors.get(0).getDetails().getText().startsWith("The extension http://hl7.org/fhir/StructureDefinition/patient-citizenship is not allowed to be used at this point (this element is [RelatedPerson]; allowed for this version = e:Patient)"));
+		// patient-birthPlace has 'Patient' as its only context, so it is not allowed on a RelatedPerson. It replaced
+		// patient-citizenship in this test, whose context was widened to Patient|RelatedPerson|Person in
+		// hl7.fhir.uv.extensions 5.3.0.
+		// Since core 6.9.1, extensionUrlVersioned includes version, so message text includes "v4.0.1"
+		assertTrue(errors.get(0).getDetails().getText().startsWith("The extension http://hl7.org/fhir/StructureDefinition/patient-birthPlace"));
 		engine.addSuppressedError("Extension_EXTP_Context_Wrong", "RelatedPerson");
  		expectValid(this.relatedPerson, Manager.FhirFormat.JSON, "http://hl7.org/fhir/StructureDefinition/RelatedPerson");
 	}
@@ -136,6 +150,149 @@ class R4ValidationTests {
 		//final String invalidObservation = observationRaw.replace("{{UNIT}}", "non-existent-code");
 		//final var errors = this.expectInvalid(invalidObservation, Manager.FhirFormat.XML, "http://hl7.org/fhir/StructureDefinition/Observation");
 		//assertEquals(1, errors.size());
+	}
+
+	/**
+	 * We validate a Patient resource with a CH Core extension that isn't known by the validator.
+	 * By default, this should be rejected (anyExtensionsAllowed = false and extensionDomains = []).
+	 */
+	@Test
+	void testUnknownExtensionIsRejectedByDefault() throws Exception {
+		final String resourceWithUnknownExtension = this.loadSample("patient-with-extension.json");
+		this.expectInvalid(resourceWithUnknownExtension, Manager.FhirFormat.JSON, "http://hl7" +
+			".org/fhir/StructureDefinition/Patient");
+	}
+
+	/**
+	 * The same Patient should be valid with anyExtensionsAllowed = true.
+	 */
+	@Test
+	void testUnknownExtensionCanBeAcceptedWithAny() throws Exception {
+		this.engine.setAnyExtensionsAllowed(true);
+		final String resourceWithUnknownExtension = this.loadSample("patient-with-extension.json");
+		this.expectValid(resourceWithUnknownExtension, Manager.FhirFormat.JSON, "http://hl7.org/fhir/StructureDefinition/Patient");
+	}
+
+	@Test
+	void testFhirPathDataAbsentReason() throws FHIRException, IOException {
+		String patient = """
+			{
+			  "resourceType": "Patient",
+			  "identifier": [
+			    {
+			      "system": "urn:oid:2.16.756.5.32",
+			      "value": "7561234567866"
+			    }
+			  ],
+			  "name": [
+			    {
+			      "_family": {
+			        "extension": [
+			          {
+			            "url": "http://hl7.org/fhir/StructureDefinition/data-absent-reason",
+			            "valueCode": "unknown"
+			          }
+			        ]
+			      },
+			      "_given": [
+			        {
+			          "extension": [
+			            {
+			              "url": "http://hl7.org/fhir/StructureDefinition/data-absent-reason",
+			              "valueCode": "unknown"
+			            }
+			          ]
+			        }
+			      ]
+			    }
+			  ]
+			}
+			""";
+		String expression = "name.where(" +
+			"(given.hasValue() and (''+given.first()).length() = 1 " +
+			"or given.hasValue().not() and given.extension.where(url='http://hl7.org/fhir/StructureDefinition/data-absent-reason').exists()) " +
+			"and " +
+			"(family.hasValue() and (''+family.first()).length() = 1 " +
+			"or family.hasValue().not() and family.extension.where(url='http://hl7.org/fhir/StructureDefinition/data-absent-reason').exists())" +
+			")";
+
+		// Patient with data-absent-reason extensions only (no primitive values)
+		String result = this.engine.evaluateFhirPath(patient, true, expression);
+		log.info("FHIRPath result (data-absent-reason patient): '{}'", result);
+		assertFalse(result.isEmpty(), "Expected data-absent-reason patient to match");
+
+		// Patient with actual name values
+		String patientWithValues = """
+			{
+			  "resourceType": "Patient",
+			  "name": [
+			    {
+			      "family": "M",
+			      "given": ["A"]
+			    }
+			  ]
+			}
+			""";
+		String resultWithValues = this.engine.evaluateFhirPath(patientWithValues, true, expression);
+		log.info("FHIRPath result (patient with values): '{}'", resultWithValues);
+		assertFalse(resultWithValues.isEmpty(), "Expected patient with name values to match");
+
+		// Patient with empty string values (should NOT match - no value and no data-absent-reason)
+		String patientNoName = """
+			{
+			  "resourceType": "Patient",
+			  "name": [
+			    {
+			      "use": "official"
+			    }
+			  ]
+			}
+			""";
+		String resultNoName = this.engine.evaluateFhirPath(patientNoName, true, expression);
+		log.info("FHIRPath result (patient without name): '{}'", resultNoName);
+		assertTrue(resultNoName.isEmpty(), "Expected patient without name or data-absent-reason to NOT match");
+
+		// Patient with actual name values
+		String patientWithMoreThanInitials = """
+			{
+			  "resourceType": "Patient",
+			  "name": [
+			    {
+			      "family": "MA",
+			      "given": ["A"]
+			    }
+			  ]
+			}
+			""";
+		resultWithValues = this.engine.evaluateFhirPath(patientWithMoreThanInitials, true, expression);
+		log.info("FHIRPath result (patient with with more than initials): '{}'", resultWithValues);
+		assertTrue(resultWithValues.isEmpty(), "Expected patient without more than initials to NOT match");
+
+	}
+
+	/**
+	 * The same Patient should be valid if we allow the specific domain of the extension.
+	 * We test different inputs for the domain: from the exact extension URL, to the DNS name only.
+	 */
+	@ParameterizedTest
+	@ValueSource(strings = {
+		"http://fhir.ch/ig/ch-core/StructureDefinition/ch-core-patient-ech-11-placeoforigin",
+		"http://fhir.ch/ig/ch-core/",
+		"http://fhir.ch/",
+		"http://fhir.ch",
+	})
+	void testUnknownExtensionCanBeAcceptedWithDomain(final String allowedDomain) throws Exception {
+		this.engine.setExtensionDomains(List.of(allowedDomain));
+		final String resourceWithUnknownExtension = this.loadSample("patient-with-extension.json");
+		this.expectValid(resourceWithUnknownExtension, Manager.FhirFormat.JSON, "http://hl7.org/fhir/StructureDefinition/Patient");
+	}
+
+	@Test
+	void testUnknownExtensionIsRejectedWithDifferentDomain() throws Exception {
+		this.engine.setExtensionDomains(List.of("http://aoihafs.com"));
+		final String resourceWithUnknownExtension = this.loadSample("patient-with-extension.json");
+		this.expectInvalid(resourceWithUnknownExtension, Manager.FhirFormat.JSON, "http://hl7.org/fhir/StructureDefinition" +
+			"/Patient");
 	}
 
 	/**
@@ -193,4 +350,5 @@ class R4ValidationTests {
 			R4ValidationTests.class.getResourceAsStream("/r4-samples/" + filename).readAllBytes()
 		);
 	}
+
 }

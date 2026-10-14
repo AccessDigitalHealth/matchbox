@@ -61,3 +61,69 @@ table {
 .card-igs {
   margin-bottom: 10px;
 }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem 0;
+
+  button {
+    cursor: pointer;
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.5;
+    }
+  }
+
+  .page-info {
+    color: rgb(107, 114, 128);
+  }
+}
+
+tbody tr.selected td {
+  background: #eee;
+}
+
+tbody tr.registry-install td {
+  padding-top: 0.5rem;
+  padding-bottom: 0;
+
+  &:hover {
+    background: inherit;
+  }
+
+  mat-form-field {
+    min-width: 320px;
+  }
+}
+
+.registry-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+}
+
+.registry-error {
+  color: #b00020;
+}
+
+.installed-badge {
+  margin-left: 0.5rem;
+  padding: 0 0.4rem;
+  border-radius: 4px;
+  background: lightyellow;
+  border: 1px solid rgb(209, 213, 219);
+  color: rgb(107, 114, 128);
+  font-size: 0.85em;
+}
+
+.installing {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  vertical-align: middle;
+}

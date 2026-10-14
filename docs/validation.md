@@ -1,21 +1,24 @@
 # Validation of FHIR resources
 
-matchbox can validate FHIR resources if they are conform to the FHIR R4/R4B or R5 specification
+Matchbox can validate FHIR resources if they are conform to the FHIR R4/R4B or R5 specification
 and conform to the requirements of specific implementation guides.
 
-a tutorial how to validate FHIR resources and to what error message you have to look out for is availabe [here](validation-tutorial.md).
+a tutorial how to validate FHIR resources and to what error message you have to look out for is 
+available [here](validation-tutorial.md).
 
-Validation is based on the official [HL7 Java reference validator](https://confluence.hl7.org/display/FHIR/Using+the+FHIR+Validator) in accordance with the provided terminologies. An external terminology server can also be configured, and you can validate your implementation through the $validate operation with the FHIR API or through a simple GUI.
+Validation is based on the official [HL7 Java reference validator](https://confluence.hl7.org/display/FHIR/Using+the+FHIR+Validator) in accordance with the provided terminologies.
+An external terminology server can also be configured, and you can validate your implementation through the `$validate`
+operation with the FHIR API or through a simple GUI.
 
-## matchbox engine
+## Matchbox engine
 
 see [matchbox-engine](matchbox-engine.md) for using the validation functionality as a library.
 
-## matchbox
+## Matchbox
 
 ### FHIR API
 
-For the $validate operation on the server, see the OperationDefinition for validation support:
+For the `$validate` operation on the server, see the OperationDefinition for validation support:
 [[server]/$validate](https://test.ahdis.ch/matchboxv3/fhir/OperationDefinition/-s-validate) for checking FHIR 
 resources conforming to the loaded implementation guides.
 
@@ -35,7 +38,7 @@ Validation for profile http://fhir.ch/ig/ch-core/StructureDefinition/ch-core-pat
 
 ### Configuration parameters
 
-Default validation parameters can be set directly in provided application.yaml, see also the confluecne page of HL7 [Using the FHIR Validator](https://confluence.hl7.org/display/FHIR/Using+the+FHIR+Validator)
+Default validation parameters can be set directly in provided application.yaml, see also the confluence page of HL7 [Using the FHIR Validator](https://confluence.hl7.org/display/FHIR/Using+the+FHIR+Validator)
 
 ```yaml
 hapi:
@@ -65,34 +68,35 @@ matchbox:
     context:
       fhirVersion: 4.0.1
       txServer: n/a
-      #      onlyOneEngine: true
-      #      xVersion : false
-      #      igsPreloaded: ch.fhir.ig.ch-core#4.0.0-ballot
+      # onlyOneEngine: true
+      # igsPreloaded: ch.fhir.ig.ch-core#4.0.0-ballot
       suppressWarnInfo:
         hl7.fhir.r4.core#4.0.1:
         #- "Constraint failed: dom-6:"
-      #analyzeOutcomeWithAIOnError: true
-      #llm:
-      #  provider: anthropic
-      #  modelName: claude-3-5-sonnet-20241022
-      #  apiKey: sk-xxx
+      llm:
+        # provider: anthropic
+        # modelName: claude-3-5-sonnet-20241022
+        # apiKey: sk-xxx
+    validation:
+      # analyzeErrorsWithLlm: true
 ```
 
-| Parameter             | Card  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-|-----------------------|-------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| implementationguides  | 0..\* | the Implementation Guide and version which with which matchbox will be configured, you can provide by classpath, file, http address, if none is specified the FHIR package servers will be used (need to be online)                                                                                                                                                                                                                                                               |
-| txServer              | 0..1  | txServer to use, n/a if none (default), http://localhost:8080/tx for internal (if server.port in application.yaml is 8080), http://tx.fhir.org for hl7 validator, if the terminology server is protected by an API key see configuration notes below                                                                                                                                                                                                                              |
-| txUseEcosystem        | 0..1  | boolean true if none (default), if true asks tx servers for which CodeSystem they are authoritative                                                                                                                                                                                                                                                                                                                                                                                |
-| txServerCache         | 0..1  | boolean if responses are cached, true  if none (default)                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| txLog                 | 0..1  | string indicating file location of log (end either in .txt or .html, default no logging                                                                                                                                                                                                                                                                                                                                                                                           |
-| igsPreloaded          | 0..\* | For each mentioned ImplementationGuide (comma separated) an engine will be created, which will be cached in memory as long the application is running. Other IG's will created on demand and will be cached for an hour for subsequent calls. Tradeoff between memory consumption and first response time (creating of engine might have duration of half a minute). Default no igs are preloaded.                                                                                |
-| onlyOneEngine         | 0..1  | Implementation Guides can have multiple versions with different dependencies. Matchbox creates for transformation and validation an own engine for each Implementation Guide and its dependencies (default setting). You can switch this behavior, e.g. if you are using it in development and want to create and update resources or transform maps. Set the setting for onlyOneEngine to true. The changes are however not persisted and will be lost if matchbox is restarted. |
-| httpReadOnly          | 0..1  | Whether to allow creating, modifying or deleting resources on the server via the HTTP API or not. If `true`, IGs can only be loaded through the configuration.                                                                                                                                                                                                                                                                                                                    |
-| suppressWarnInfo      | 0..\* | A list of warning message to ignore while validating resources, per Implementation Guide and version.                                                                                                                                                                                                                                                                                                                                                                             |
-| extensions            | 0..1  | Extensions not defined by the ImplementationGuides which are accepted, comma separated list by url patterns, defaults to 'any'                                                                                                                                                                                                                                                                                                                                                   |
-| disableDefaultResourceFetcher  | 0..1  | defaults to true, enables matchbox behaviour that references within bundles are resolved, validated and checked (different to java validator), if false see below                                                                                                                                                                                                                                                                                                                 |
-| check-references  | 0..1  | Provided with this parameter and disableDefaultResourceFetcher set to false, the validator only knows how to follow absolute URLs, and it will attempt to. Invalid absolute URLs and any relative URLs will cause validation failures. Defaults to false                                                                                                                                                                                                                          |
-| resolution-context  | 0..1  | Provided with this parameter and disableDefaultResourceFetcher set to false the validator resolve relative references, needs to be a server address                                                                                                                                                                                                                                                                                                                               |
+| Parameter                     | Card  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+|-------------------------------|-------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| implementationguides          | 0..\* | the Implementation Guide and version which with which Matchbox will be configured, you can provide by classpath, file, http address, if none is specified the FHIR package servers will be used (need to be online)                                                                                                                                                                                                                                                               |
+| txServer                      | 0..1  | txServer to use, n/a if none (default), http://localhost:8080/tx for internal (if server.port in application.yaml is 8080), http://tx.fhir.org for hl7 validator, if the terminology server is protected by an API key see configuration notes below                                                                                                                                                                                                                              |
+| txUseEcosystem                | 0..1  | boolean true if none (default), if true asks tx servers for which CodeSystem they are authoritative                                                                                                                                                                                                                                                                                                                                                                               |
+| txServerCache                 | 0..1  | boolean if responses are cached, true  if none (default)                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| txLog                         | 0..1  | string indicating file location of log (end either in .txt or .html, default no logging                                                                                                                                                                                                                                                                                                                                                                                           |
+| igsPreloaded                  | 0..\* | For each mentioned ImplementationGuide (comma separated) an engine will be created, which will be cached in memory as long the application is running. Other IG's will created on demand and will be cached for an hour for subsequent calls. Tradeoff between memory consumption and first response time (creating of engine might have duration of half a minute). Default no igs are preloaded.                                                                                |
+| onlyOneEngine                 | 0..1  | Implementation Guides can have multiple versions with different dependencies. Matchbox creates for transformation and validation an own engine for each Implementation Guide and its dependencies (default setting). You can switch this behavior, e.g. if you are using it in development and want to create and update resources or transform maps. Set the setting for onlyOneEngine to true. The changes are however not persisted and will be lost if Matchbox is restarted. |
+| httpReadOnly                  | 0..1  | Whether to allow creating, modifying or deleting resources on the server via the HTTP API or not. If `true`, IGs can only be loaded through the configuration.                                                                                                                                                                                                                                                                                                                    |
+| suppressWarnInfo              | 0..\* | A list of warning message to ignore while validating resources, per Implementation Guide and version.                                                                                                                                                                                                                                                                                                                                                                             |
+| extensions                    | 0..1  | Extensions not defined by the ImplementationGuides which are accepted, comma separated list by url patterns, defaults to 'any'                                                                                                                                                                                                                                                                                                                                                    |
+| disableDefaultResourceFetcher | 0..1  | defaults to true, enables Matchbox behaviour that references within bundles are resolved, validated and checked (different to java validator), if false see below                                                                                                                                                                                                                                                                                                                 |
+| check-references              | 0..1  | Provided with this parameter and disableDefaultResourceFetcher set to false, the validator only knows how to follow absolute URLs, and it will attempt to. Invalid absolute URLs and any relative URLs will cause validation failures. Defaults to false                                                                                                                                                                                                                          |
+| resolution-context            | 0..1  | Provided with this parameter and disableDefaultResourceFetcher set to false the validator resolve relative references, needs to be a server address                                                                                                                                                                                                                                                                                                                               |
+| save-statistics               | 0..1  | Matchbox can store the results of the validation operation as an Operation Outcome. This setting enables this persistence and enables statistics page on frontend. Accepts boolean values.                                                                                                                                                                                                                                                                                        |
 
 See configuration parameters in [Matchbox Server](matchbox-server.md#configuration) for more details.
 
@@ -123,7 +127,7 @@ Validation issues to be suppressed are defined in the configuration file, per Im
 
 You need to provide the [messageId](https://github.com/hapifhir/org.hl7.fhir.core/blob/master/org.hl7.fhir.utilities/src/main/java/org/hl7/fhir/utilities/i18n/I18nConstants.java) to indicate the error which should be suppressed. An optional regex for the path where the error happened in the resouces can be added. The regex needs to be added after the '@^' characters, e.g: "messageId@^regex".
 
-If you wan't to match the errors with unknown extensions you see error messages like this: 
+If you want to match the errors with unknown extensions you see error messages like this: 
 
 ```
 Bundle.entry[17].resource/Patient/e5ZHnklVuYuT85PnDVOepOg3/.extension[6].url:
@@ -132,7 +136,7 @@ URL value 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-sex' does not
 
 the following combination will exclude all unknown extensions:
 
-Type_Specific_Checks_DT_URL_Resolve@^.*extension.*url
+`Type_Specific_Checks_DT_URL_Resolve@^.*extension.*url`
 
 Example of configuration file:
 ```yaml
@@ -153,9 +157,15 @@ EVS API has also been implemented. See the
 [validation-service-api](https://gitlab.inria.fr/gazelle/library/validation-service-api) project for the existing 
 documentation.
 
-The list of available profiles is available at
-[[server]/gazelle/validation/profiles](https://test.ahdis.ch/matchboxv3/gazelle/validation/profiles), and the 
-validation request is sent to `POST [server]/gazelle/validation/validate`.
+Both versions of the Validation Service API are served, with `[server]/gazelle` as base URL:
+
+| | v1 (EVSClient) | v2 (e.g. Gazelle Maestro) |
+|---|---|---|
+| Profiles | `GET [server]/gazelle/validation/profiles` | `GET [server]/gazelle/validation/v2/profiles` |
+| Validation | `POST [server]/gazelle/validation/validate` | `POST [server]/gazelle/validation/v2/validate` |
+
+In v2, every profile declares a single required input with the id `contentToValidate`: the FHIR resource (JSON or 
+XML) to validate against the profile.
 
 To configure a Matchbox instance in the EVSClient, the following actions shall be done:
 
@@ -209,7 +219,10 @@ LOINC, etc).
 
 ### Terminology server requiring authentication
 
-If you configure a terminology server which requires authentication you need to specifiy the authentication parameters in [fhir-settings.json](https://confluence.hl7.org/display/FHIR/Using+fhir-settings.json), an additional file in the confiugration directory where you put the application.yaml, see example in https://github.com/ahdis/matchbox/tree/main/matchbox-server/with-ca
+If you configure a terminology server which requires authentication you need to specify the authentication parameters
+in [fhir-settings.json](https://confluence.hl7.org/display/FHIR/Using+fhir-settings.json), an additional file in the
+configuration directory where you put the application.yaml, see example
+in https://github.com/ahdis/matchbox/tree/main/matchbox-server/with-ca.
 
 ### GUI
 
@@ -234,3 +247,31 @@ E.g.
 ```http
 GET https://test.ahdis.ch/matchboxv3/validate#profile=http%3A%2F%2Fhl7.org%2Ffhir%2FStructureDefinition%2FBundle&txServer=http://tx.fhir.org/r4&resource=PFBhdGllbnQgeG1sbnM9Imh0dHA6Ly9obDcub3JnL2ZoaXIiPgogIDxuYW1lPgogICAgPGZhbWlseSB2YWx1ZT0iVGVzdCIvPgogIDwvbmFtZT4KPC9QYXRpZW50Pg HTTP/1.1
 ```
+
+## Comparison with HAPI FHIR validation
+
+Matchbox builds on the [HL7 FHIR Core](https://github.com/hapifhir/org.hl7.fhir.core) validation library and the [HAPI FHIR](https://hapifhir.io/) framework, but extends them with additional capabilities. This section clarifies how the different HAPI FHIR validation approaches relate to Matchbox.
+
+### HAPI FHIR validation approaches
+
+HAPI FHIR provides  different ways to validate FHIR resources:
+
+1. **HL7 FHIR Validator CLI** — The official [HL7 Java reference validator](https://github.com/hapifhir/org.hl7.fhir.core/tree/master/org.hl7.fhir.validation), available as a command-line tool. It validates resources against profiles and implementation guides.
+2. **Web-based FHIR Validator** — A web front-end hosted at [validator.fhir.org](https://validator.fhir.org), built on the [HL7 FHIR Validator](https://github.com/hapifhir/org.hl7.fhir.validator-wrapper) [wrapper](https://github.com/hapifhir/org.hl7.fhir.validator-wrapper) project.
+3. **HAPI FHIR JPA Server with validation** — The [HAPI FHIR JPA server](https://hapifhir.io/hapi-fhir/docs/validation/instance_validator.html#packages) can be configured with validation capabilities.
+
+### Where Matchbox differs
+
+| Area                                          | Matchbox                                                                                                                                                                                                                        | HAPI FHIR                                                                                                                                                   |
+|-----------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **FHIR API for validation**                   | Supports the `$validate` operation on the system FHIR server endpoint, which external tooling can use directly.                                                                                                                 | The web-based validator (2) and the JPA server (3) handle the the validation API differently                                                                |
+| **Pre-configured Implementation Guides**      | Implementation Guides can be pre-configured for validation without requiring access to the internet or external package servers at runtime. This is a unique feature of Matchbox useful for offline and production deployments. | The JPA server (3) can store IGs. The CLI (1) and web validator (2) typically resolve packages from online registries.                                      |
+| **External terminology server configuration** | Fully configurable, including an internal minimal terminology server for production use (see [Terminology server](#terminology-server) above).                                                                                  | Not available in the standard HAPI FHIR JPA server setup (3). The web-based validator and JAVA validator (1,2) do support configuring a terminology server. |
+| **Enhanced validation report**                | The OperationOutcome returned by Matchbox includes detailed information about all parameters used for the validation (profiles, packages, engine versions, validation settings), making results reproducible and traceable.     | Not available in any of the HAPI FHIR validation approaches.                                                                                                |
+| **AI validation report analysis**             | Validation results can be analyzed by an LLM to provide human-readable summaries and recommendations.                                                                                                                           | Not available.                                                                                                                                              |
+| **MCP FHIR validation support**               | Matchbox provides a [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server, enabling AI assistants and tools to perform FHIR validation programmatically.                                                      | Not available.                                                                                                                                              |
+| **Gazelle EVS Client integration**            | Matchbox implements the [IHE Gazelle EVS API](#gazelle-evs-api), allowing integration with the IHE Gazelle testing platform.                                                                                                    | Not available.                                                                                                                                              |
+
+### Summary
+
+Matchbox uses the same HL7 FHIR Core validation library as all HAPI FHIR validation tools, ensuring consistent validation logic. On top of this foundation, Matchbox adds features aimed at production deployments, integration with external tooling, and enhanced traceability of validation results.

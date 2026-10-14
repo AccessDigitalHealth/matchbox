@@ -1,28 +1,25 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Output } from '@angular/core';
-
-export interface IDroppedBlob {
-  blob: File;
-  name: string;
-  contentType: string;
-}
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Output } from '@angular/core';
+import { UploadedFile } from './uploaded-file';
 
 @Component({
-    selector: 'app-upload',
-    templateUrl: './upload.component.html',
-    styleUrls: ['./upload.component.scss'],
-    changeDetection: ChangeDetectionStrategy.OnPush,
-    standalone: false
+  selector: 'app-upload',
+  templateUrl: './upload.component.html',
+  styleUrls: ['./upload.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  standalone: false,
 })
 export class UploadComponent {
-  @Output() addFiles = new EventEmitter<IDroppedBlob>();
+  @Output() addFiles = new EventEmitter<UploadedFile>();
 
   dragCounter = 0;
 
-  checkStatus(response): boolean {
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} - ${response.statusText}`);
-    }
-    return response;
+  public selectedFile: UploadedFile | null = null;
+
+  constructor(private readonly changeDetectorRef: ChangeDetectorRef) {}
+
+  public clear() {
+    this.selectedFile = null;
+    this.changeDetectorRef.markForCheck();
   }
 
   onDrop(ev) {
@@ -31,15 +28,14 @@ export class UploadComponent {
     this.dragCounter = 0;
     const files = ev.target.files || ev.dataTransfer.items;
     if (files) {
-      for (let i = 0; i < files.length; i++) {
+      for (const element of files) {
         // If dropped items aren't files, reject them
-        if (files[i].kind === undefined || files[i].kind === 'file') {
-          const file = files[i].getAsFile ? files[i].getAsFile() : files[i];
-          this.addFiles.emit({ name: file.name, contentType: '', blob: file });
+        if (element.kind === undefined || element.kind === 'file') {
+          const file = element.getAsFile ? element.getAsFile() : element;
+          this.setSelectedFile({ name: file.name, contentType: '', blob: file });
         }
-        if (files[i].kind === 'string' || files[i].kind === 'text/uri-list') {
-          var url = ev.dataTransfer.getData('URL');
-          this.fetchData(url);
+        if (element.kind === 'string' || element.kind === 'text/uri-list') {
+          this.fetchData(ev.dataTransfer.getData('URL'));
         }
       }
     }
@@ -47,9 +43,15 @@ export class UploadComponent {
 
   async fetchData(url: string) {
     const res = await fetch(url, { cache: 'no-store' });
-    const contentType = res.headers.get('Content-Type');
-    const blob = await res.blob() as File;
-    this.addFiles.emit({ name: url, contentType, blob });
+    const contentType = res.headers.get('Content-Type') ?? '';
+    const blob = (await res.blob()) as File;
+    this.setSelectedFile({ name: url, contentType, blob });
+  }
+
+  setSelectedFile(file: UploadedFile) {
+    this.addFiles.emit(file);
+    this.selectedFile = file;
+    this.changeDetectorRef.markForCheck();
   }
 
   onDragOver(ev: DragEvent) {
