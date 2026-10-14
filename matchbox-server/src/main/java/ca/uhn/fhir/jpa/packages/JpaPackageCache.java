@@ -50,6 +50,7 @@ import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import ca.uhn.fhir.util.BinaryUtil;
 import ca.uhn.fhir.util.ResourceUtil;
 import ca.uhn.fhir.util.StringUtil;
+import ch.ahdis.matchbox.events.InstalledPackagesChangedEvent;
 import ch.ahdis.matchbox.packages.MatchboxJpaPackageCache;
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
@@ -77,11 +78,14 @@ import org.hl7.fhir.utilities.npm.PackageServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Slice;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.ByteArrayInputStream;
@@ -139,6 +143,13 @@ public class JpaPackageCache extends BasePackageCacheManager implements IHapiPac
 	@Autowired(required = false) // It is possible that some implementers will not create such a bean.
 	private IBinaryStorageSvc myBinaryStorageSvc;
 
+  @Autowired
+  private MatchboxJpaPackageCache matchboxJpaPackageCache;
+
+	// MODIFIED: matchbox caches the IG of the canonicals (#616)
+	@Autowired
+	private ApplicationEventPublisher myApplicationEventPublisher;
+
 	@Override
 	public void addPackageServer(@Nonnull PackageServer thePackageServer) {
 		assert myPackageLoaderSvc != null;
@@ -168,6 +179,15 @@ public class JpaPackageCache extends BasePackageCacheManager implements IHapiPac
 	@Override
 	@Transactional
 	public NpmPackage loadPackageFromCacheOnly(String theId, @Nullable String theVersion) {
+		return findPackageVersionFromCacheOnly(theId, theVersion).map(t -> loadPackage(t)).orElse(null);
+	}
+
+	/**
+	 * matchbox: the package version that {@link #loadPackageFromCacheOnly(String, String)} loads (a version like
+	 * 3.3.x resolved to the latest installed 3.3 version), without reading and unpacking the package archive (#609)
+	 */
+	@Transactional
+	public Optional<NpmPackageVersionEntity> findPackageVersionFromCacheOnly(String theId, @Nullable String theVersion) {
 		Optional<NpmPackageVersionEntity> packageVersion = loadPackageVersionEntity(theId, theVersion);
 		if (!packageVersion.isPresent() && theVersion.endsWith(".x")) {
 			String lookupVersion = theVersion;
@@ -183,8 +203,7 @@ public class JpaPackageCache extends BasePackageCacheManager implements IHapiPac
 						loadPackageVersionEntity(theId, candidateVersionIds.get(candidateVersionIds.size() - 1));
 			}
 		}
-
-		return packageVersion.map(t -> loadPackage(t)).orElse(null);
+		return packageVersion;
 	}
 
 	private Optional<NpmPackageVersionEntity> loadPackageVersionEntity(String theId, @Nullable String theVersion) {
@@ -282,6 +301,7 @@ public class JpaPackageCache extends BasePackageCacheManager implements IHapiPac
 		IBaseBinary binary = createPackageBinary(bytes);
 
 		return newTxTemplate().execute(tx -> {
+			publishInstalledPackagesChanged(); // MODIFIED (#616)
 			ResourceTable persistedPackage = createResourceBinary(binary);
 			NpmPackageEntity pkg = myPackageDao.findByPackageId(packageId).orElseGet(() -> createPackage(npmPackage));
 			NpmPackageVersionEntity packageVersion = myPackageVersionDao
@@ -410,9 +430,11 @@ public class JpaPackageCache extends BasePackageCacheManager implements IHapiPac
 						}
 						resourceEntity.setCanonicalVersion(version);
 					}
-          // PATCH MATCHBOX: the next line is our customization hook: https://github.com/ahdis/matchbox/issues/341
-          MatchboxJpaPackageCache.customizeNpmPackageVersionResourceEntity(resourceEntity, resource);
+          // MATCHBOX PATCH: the two calls to matchboxJpaPackageCache are our customization hook:
+          //                 https://github.com/ahdis/matchbox/issues/341
+          this.matchboxJpaPackageCache.interceptEntityBeforeSaving(resourceEntity, resource);
 					myPackageVersionResourceDao.save(resourceEntity);
+          this.matchboxJpaPackageCache.interceptEntityAfterSaving(resourceEntity, resource);
 
 					String resType = packageContext.getResourceType(resource);
 					String msg = "Indexing " + resType + " Resource[" + dirName + '/' + nextFile + "] with URL: "
@@ -477,9 +499,26 @@ public class JpaPackageCache extends BasePackageCacheManager implements IHapiPac
 		return retVal;
 	}
 
+	/**
+	 * MODIFIED: tells matchbox that the installed packages have changed, once the transaction has completed, so that it
+	 * looks up the IG of the canonicals again (#616).
+	 */
+	private void publishInstalledPackagesChanged() {
+		if (TransactionSynchronizationManager.isSynchronizationActive()) {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override
+				public void afterCompletion(final int status) {
+					myApplicationEventPublisher.publishEvent(new InstalledPackagesChangedEvent(JpaPackageCache.this));
+				}
+			});
+		} else {
+			myApplicationEventPublisher.publishEvent(new InstalledPackagesChangedEvent(this));
+		}
+	}
+
 	@Nonnull
 	public FhirContext getFhirContext(FhirVersionEnum theFhirVersion) {
-		return myVersionToContext.computeIfAbsent(theFhirVersion, v -> new FhirContext(v));
+		return myVersionToContext.computeIfAbsent(theFhirVersion, FhirContext::forCached);
 	}
 
 	private IBaseBinary createPackageBinary(byte[] theBytes) {
@@ -592,7 +631,16 @@ public class JpaPackageCache extends BasePackageCacheManager implements IHapiPac
 		}
 	}
 
-	private IBaseResource loadPackageEntity(NpmPackageVersionResourceEntity contents) {
+  @Override
+  @Transactional
+  public NpmPackage loadPackage(final String thePackageId,
+                                final String thePackageVersion,
+                                final boolean theShouldUpdateCache)
+    throws FHIRException, IOException {
+    return this.loadPackage(thePackageId, thePackageVersion);
+  }
+
+  private IBaseResource loadPackageEntity(NpmPackageVersionResourceEntity contents) {
 		try {
 			JpaPid binaryPid = contents.getResourceBinary().getId();
 			IBaseBinary binary = getBinaryDao().readByPid(binaryPid);
@@ -715,6 +763,7 @@ public class JpaPackageCache extends BasePackageCacheManager implements IHapiPac
 		Optional<NpmPackageVersionEntity> packageVersion =
 				myPackageVersionDao.findByPackageIdAndVersion(thePackageId, theVersion);
 		if (packageVersion.isPresent()) {
+			publishInstalledPackagesChanged(); // MODIFIED (#616)
 
 			String msg = "Deleting package " + thePackageId + "#" + theVersion;
 			ourLog.info(msg);
@@ -769,6 +818,81 @@ public class JpaPackageCache extends BasePackageCacheManager implements IHapiPac
 		}
 
 		return retVal;
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<IBaseResource> loadPackageAssetsByUrl(FhirVersionEnum theFhirVersion, String theCanonicalUrl, org.springframework.data.domain.PageRequest thePageRequest) {
+		String canonicalUrl = theCanonicalUrl;
+		int versionSeparator = canonicalUrl.lastIndexOf('|');
+		Slice<NpmPackageVersionResourceEntity> slice;
+		if (versionSeparator != -1) {
+			String canonicalVersion = canonicalUrl.substring(versionSeparator + 1);
+			canonicalUrl = canonicalUrl.substring(0, versionSeparator);
+			slice = myPackageVersionResourceDao.findCurrentVersionByCanonicalUrlAndVersion(
+					thePageRequest, theFhirVersion, canonicalUrl, canonicalVersion);
+		} else {
+			slice = myPackageVersionResourceDao.findCurrentVersionByCanonicalUrl(
+					thePageRequest, theFhirVersion, canonicalUrl);
+		}
+		return slice.stream().map(this::loadPackageEntity).collect(Collectors.toList());
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<NpmPackageAssetInfoJson> findPackageAssetInfoByUrl(FhirVersionEnum theFhirVersion, String theCanonicalUrl) {
+		String canonicalUrl = theCanonicalUrl;
+		int versionSeparator = canonicalUrl.lastIndexOf('|');
+		Slice<NpmPackageVersionResourceEntity> slice;
+		if (versionSeparator != -1) {
+			String canonicalVersion = canonicalUrl.substring(versionSeparator + 1);
+			canonicalUrl = canonicalUrl.substring(0, versionSeparator);
+			slice = myPackageVersionResourceDao.findCurrentVersionByCanonicalUrlAndVersion(
+					PageRequest.of(0, 1000), theFhirVersion, canonicalUrl, canonicalVersion);
+		} else {
+			slice = myPackageVersionResourceDao.findCurrentVersionByCanonicalUrl(
+					PageRequest.of(0, 1000), theFhirVersion, canonicalUrl);
+		}
+		return slice.stream().map(e -> new NpmPackageAssetInfoJson(
+				null, e.getCanonicalUrl(), e.getFhirVersion(), e.getPackageVersion().getPackageId(), e.getPackageVersion().getVersionId()
+		)).collect(Collectors.toList());
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public IBaseResource findPackageAsset(FindPackageAssetRequest theRequest) {
+		String canonicalUrl = theRequest.getCanonicalUrl();
+		FhirVersionEnum fhirVersion = theRequest.getFhirVersion();
+		String version = theRequest.getVersion();
+		Slice<NpmPackageVersionResourceEntity> slice;
+		if (version != null) {
+			slice = myPackageVersionResourceDao.findCurrentVersionByCanonicalUrlAndVersion(
+					PageRequest.of(0, 1), fhirVersion, canonicalUrl, version);
+		} else {
+			slice = myPackageVersionResourceDao.findCurrentVersionByCanonicalUrl(
+					PageRequest.of(0, 1), fhirVersion, canonicalUrl);
+		}
+		if (slice.isEmpty()) {
+			return null;
+		}
+		return loadPackageEntity(slice.getContent().get(0));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<IBaseResource> findPackageAssets(FindPackageAssetRequest theRequest) {
+		String canonicalUrl = theRequest.getCanonicalUrl();
+		FhirVersionEnum fhirVersion = theRequest.getFhirVersion();
+		String version = theRequest.getVersion();
+		Slice<NpmPackageVersionResourceEntity> slice;
+		if (version != null) {
+			slice = myPackageVersionResourceDao.findCurrentVersionByCanonicalUrlAndVersion(
+					theRequest.getPageRequest(), fhirVersion, canonicalUrl, version);
+		} else {
+			slice = myPackageVersionResourceDao.findCurrentVersionByCanonicalUrl(
+					theRequest.getPageRequest(), fhirVersion, canonicalUrl);
+		}
+		return slice.stream().map(this::loadPackageEntity).collect(Collectors.toList());
 	}
 
 	@Override
@@ -849,5 +973,15 @@ public class JpaPackageCache extends BasePackageCacheManager implements IHapiPac
 			}
 		}
 		return retVal;
+	}
+
+	@Override
+    public String getLatestVersion(String statedId, boolean milestonesOnly) throws IOException {
+		throw new UnsupportedOperationException("Unimplemented method 'getLatestVersion'");
+	}
+
+	@Override
+	public String getLatestVersion(String statedId, String versionFilter) throws IOException {
+		throw new UnsupportedOperationException("Unimplemented method 'getLatestVersion'");
 	}
 }

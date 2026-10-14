@@ -1,8 +1,8 @@
-import { HttpClient, provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
+import { provideHttpClient, withInterceptorsFromDi, withXhr } from '@angular/common/http';
 import { NgModule } from '@angular/core';
 import { RouterModule, Routes } from '@angular/router';
-import { provideTranslateService, TranslateLoader } from '@ngx-translate/core';
-import { TranslateHttpLoader } from '@ngx-translate/http-loader';
+import { provideTranslateService } from '@ngx-translate/core';
+import { provideTranslateHttpLoader } from '@ngx-translate/http-loader';
 import { AppComponent } from './app.component';
 import { CapabilityStatementComponent } from './capability-statement/capability-statement.component';
 import { HomeComponent } from './home/home.component';
@@ -15,15 +15,15 @@ import { TransformComponent } from './transform/transform.component';
 import { ValidateComponent } from './validate/validate.component';
 import { OperationResultComponent } from './operation-result/operation-result.component';
 import { UploadComponent } from './upload/upload.component';
-import { OAuthModule } from 'angular-oauth2-oidc';
 import { NgxMatSelectSearchModule } from 'ngx-mat-select-search';
 import { HighlightLineNumbers } from 'ngx-highlightjs/line-numbers';
-import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
-import { ToastrModule } from 'ngx-toastr';
 import { HashUrlRedirectionService } from './util/hash-url-redirection-service';
 import { APP_BASE_HREF } from '@angular/common';
-import { MarkdownModule } from 'ngx-markdown';
-import {SortSettingsPipe} from "./validate/order-settings.pipe";
+import { SortSettingsPipe } from './validate/order-settings.pipe';
+import { StatisticsComponent } from './statistics/statistics.component';
+import { provideHotToastConfig } from '@ngxpert/hot-toast';
+import { MarkdownComponent, provideMarkdown } from 'ngx-markdown';
+import {MatList, MatListItem, MatListSubheaderCssMatStyler } from "@angular/material/list";
 
 // The Angular routes
 // All paths defined here must be supported in matchbox-server's MatchboxStaticResourceConfig, otherwise a direct access
@@ -57,11 +57,11 @@ const routes: Routes = [
     path: 'validate',
     component: ValidateComponent,
   },
+  {
+    path: 'statistics',
+    component: StatisticsComponent,
+  },
 ];
-
-export function createTranslateLoader(http: HttpClient) {
-  return new TranslateHttpLoader(http, './assets/i18n/', '.json');
-}
 
 @NgModule({
   declarations: [
@@ -75,6 +75,7 @@ export function createTranslateLoader(http: HttpClient) {
     ValidateComponent,
     OperationResultComponent,
     UploadComponent,
+    StatisticsComponent,
   ],
   bootstrap: [AppComponent],
   imports: [
@@ -83,21 +84,20 @@ export function createTranslateLoader(http: HttpClient) {
     RouterModule.forRoot(routes, {
       useHash: false, // Move from HashLocationStrategy to PathLocationStrategy
     }),
-    OAuthModule.forRoot(),
     NgxMatSelectSearchModule,
     HighlightLineNumbers,
-    BrowserAnimationsModule, // Required for toastr
-    ToastrModule.forRoot(),
-    MarkdownModule.forRoot(),
-    SortSettingsPipe
+    SortSettingsPipe,
+    MarkdownComponent,
+    MatList,
+    MatListSubheaderCssMatStyler,
+    MatListItem,
   ],
   providers: [
     provideTranslateService({
-      loader: {
-        provide: TranslateLoader,
-        useFactory: createTranslateLoader,
-        deps: [HttpClient],
-      },
+      loader: provideTranslateHttpLoader({
+        prefix: './assets/i18n/',
+        suffix: '.json',
+      }),
     }),
     {
       provide: HIGHLIGHT_OPTIONS,
@@ -110,9 +110,11 @@ export function createTranslateLoader(http: HttpClient) {
         },
       },
     },
-    provideHttpClient(withInterceptorsFromDi()),
+    provideHttpClient(withXhr(), withInterceptorsFromDi()),
     HashUrlRedirectionService,
     { provide: APP_BASE_HREF, useValue: (window as any).MATCHBOX_BASE_PATH },
+    provideHotToastConfig(),
+    provideMarkdown({}),
   ],
 })
 export class AppModule {}

@@ -210,64 +210,6 @@ public class CliContext {
   @JsonProperty("bundle")
   private String bundle = null;
 
-
-  private String igsPreloaded[];
-
-  public String[] getIgsPreloaded() {
-    return igsPreloaded;
-  }
-
-  private boolean onlyOneEngine = false;
-
-  public boolean getOnlyOneEngine() {
-    return this.onlyOneEngine;
-  }
-
-  private boolean httpReadOnly = false;
-
-  public boolean isHttpReadOnly() {
-    return this.httpReadOnly;
-  }
-
-  private boolean xVersion = false;
-  
-  public boolean getXVersion() {
-    return xVersion;
-  }
-
-  @JsonProperty("llmProvider")
-  private String llmProvider;
-
-  public String getLlmProvider() {
-    return llmProvider;
-  }
-
-  public void setLlmProvider(String llmProvider) {
-    this.llmProvider = llmProvider;
-  }
-
-  @JsonProperty("llmModelName")
-  private String llmModelName;
-
-  public String getLlmModelName() {
-    return llmModelName;
-  }
-
-  public void setLlmModelName(String llmModelName) {
-    this.llmModelName = llmModelName;
-  }
-
-  @JsonProperty("llmApiKey")
-  private String llmApiKey;
-
-  public void setLlmApiKey(String llmApiKey) {
-    this.llmApiKey = llmApiKey;
-  }
-
-  public String getLlmApiKey() {
-    return this.llmApiKey;
-  }
-  
   @JsonProperty("check-references")
   private boolean checkReferences = false;
 
@@ -295,20 +237,9 @@ public class CliContext {
   @JsonProperty("disableDefaultResourceFetcher")
   private boolean disableDefaultResourceFetcher = true;
 
-  @JsonProperty("analyzeOutcomeWithAI")
-  private Boolean analyzeOutcomeWithAI;
-
-  @JsonProperty("analyzeOutcomeWithAIOnError")
-  private Boolean analyzeOutcomeWithAIOnError;
-
   @Autowired
   public CliContext(Environment environment) {
     this.extensions = environment.getProperty("matchbox.fhir.context.extensions", String[].class, new String[]{"any"});
-    this.llmApiKey = environment.getProperty("matchbox.fhir.context.llm.apiKey", String.class);
-    this.llmModelName = environment.getProperty("matchbox.fhir.context.llm.modelName", String.class);
-    this.llmProvider = environment.getProperty("matchbox.fhir.context.llm.provider", String.class);
-    this.analyzeOutcomeWithAI = environment.getProperty("matchbox.fhir.context.analyzeOutcomeWithAI", Boolean.class, null);
-    this.analyzeOutcomeWithAIOnError = environment.getProperty("matchbox.fhir.context.analyzeOutcomeWithAIOnError", Boolean.class, null);
 
     // get al list of all JsonProperty of cliContext with return values property
     // name and property type
@@ -330,11 +261,6 @@ public class CliContext {
         }
       }
     }
-    // get properties array from the environment?
-    this.igsPreloaded = environment.getProperty("matchbox.fhir.context.igsPreloaded", String[].class);
-    this.onlyOneEngine = environment.getProperty("matchbox.fhir.context.onlyOneEngine", Boolean.class, false);
-    this.httpReadOnly = environment.getProperty("matchbox.fhir.context.httpReadOnly", Boolean.class, false);
-    this.xVersion = environment.getProperty("matchbox.fhir.context.xVersion", Boolean.class, false);
   }
 
   public CliContext(CliContext other) {
@@ -350,15 +276,6 @@ public class CliContext {
         log.error("error setting property " + field.getName());
       }
     }
-    this.igsPreloaded = other.igsPreloaded;
-    this.onlyOneEngine = other.onlyOneEngine;
-    this.httpReadOnly = other.httpReadOnly;
-    this.xVersion = other.xVersion;
-    this.analyzeOutcomeWithAI = other.analyzeOutcomeWithAI;
-    this.analyzeOutcomeWithAIOnError = other.analyzeOutcomeWithAIOnError;
-    this.llmProvider = other.llmProvider;
-    this.llmModelName = other.llmModelName;
-    this.llmApiKey = other.llmApiKey;
     this.suppressErrors = other.suppressErrors;
     this.suppressWarnInfos = other.suppressWarnInfos;
     this.igs = other.igs;
@@ -719,22 +636,6 @@ public class CliContext {
     this.bundle = bundle;
   }
 
-  public Boolean getAnalyzeOutcomeWithAI() {
-    return analyzeOutcomeWithAI;
-  }
-
-  public void setAnalyzeOutcomeWithAI(Boolean analyzeOutcomeWithAI) {
-    this.analyzeOutcomeWithAI = analyzeOutcomeWithAI;
-  }
-
-  public Boolean getAnalyzeOutcomeWithAIOnError() {
-    return analyzeOutcomeWithAIOnError;
-  }
-
-  public void setAnalyzeOutcomeWithAIOnError(Boolean analyzeOutcomeWithAIOnError) {
-    this.analyzeOutcomeWithAIOnError = analyzeOutcomeWithAIOnError;
-  }
-
   public String getR5BundleRelativeReferencePolicy() {
     return r5BundleRelativeReferencePolicy;
   }
@@ -743,8 +644,7 @@ public class CliContext {
     this.r5BundleRelativeReferencePolicy = r5BundleRelativeReferencePolicy;
   }
 
-
-  @Override
+	@Override
   public boolean equals(final Object o) {
     if (this == o)
       return true;
@@ -771,9 +671,6 @@ public class CliContext {
         && showTerminologyRouting == that.showTerminologyRouting
         && clearTxCache == that.clearTxCache
         && allowExampleUrls == that.allowExampleUrls
-        && onlyOneEngine == that.onlyOneEngine
-        && xVersion == that.xVersion
-        && httpReadOnly == that.httpReadOnly
         && htmlInMarkdownCheck == that.htmlInMarkdownCheck
         && Objects.equals(extensions, that.extensions)
         && Objects.equals(txServer, that.txServer)
@@ -790,14 +687,10 @@ public class CliContext {
         && Objects.equals(locale, that.locale)
         && Objects.equals(locations, that.locations)
         && Objects.equals(jurisdiction, that.jurisdiction)
-        && Arrays.equals(igsPreloaded, that.igsPreloaded)
         && checkReferences == that.checkReferences
         && Arrays.equals(checkReferencesTo, that.checkReferencesTo)
         && Objects.equals(resolutionContext, that.resolutionContext)
         && disableDefaultResourceFetcher == that.disableDefaultResourceFetcher
-        && Objects.equals(llmProvider, that.llmProvider)
-        && Objects.equals(llmModelName, that.llmModelName)
-        && Objects.equals(llmApiKey, that.llmApiKey)
         && checkIpsCodes == that.checkIpsCodes
         && Objects.equals(bundle, that.bundle)
         && Arrays.equals(suppressErrors, that.suppressErrors)
@@ -827,7 +720,6 @@ public class CliContext {
         showMessageIds,
         showTerminologyRouting,
         clearTxCache,
-        httpReadOnly,
         allowExampleUrls,
         htmlInMarkdownCheck,
         txServer,
@@ -844,24 +736,22 @@ public class CliContext {
         locale,
         locations,
         jurisdiction,
-        onlyOneEngine,
-        xVersion,
         checkReferences,
         checkReferencesTo,
         resolutionContext,
         disableDefaultResourceFetcher,
-        llmProvider,
-        llmModelName,
-        llmApiKey,
         checkIpsCodes,
         bundle,
         r5BundleRelativeReferencePolicy);
-    result = 31 * result + Arrays.hashCode(igsPreloaded);
     result = 31 * result + Arrays.hashCode(extensions);
     result = 31 * result + Arrays.hashCode(suppressErrors);
     result = 31 * result + Arrays.hashCode(suppressWarnInfos);
     result = 31 * result + Arrays.hashCode(igs);    
     return result;
+  }
+
+  public String sessionId() {
+	 return String.valueOf(this.hashCode());
   }
 
   @Override
@@ -903,18 +793,10 @@ public class CliContext {
         ", locale='" + locale + '\'' +
         ", locations=" + locations +
         ", jurisdiction='" + jurisdiction + '\'' +
-        ", igsPreloaded=" + Arrays.toString(igsPreloaded) +
-        ", onlyOneEngine=" + onlyOneEngine +
-        ", xVersion=" + xVersion +
-        ", httpReadOnly=" + httpReadOnly +
         ", checkReferences=" + checkReferences +
         ", resolutionContext=" + resolutionContext +
         ", r5-bundle-relative-reference-policy='" + r5BundleRelativeReferencePolicy + '\'' +
         ", disableDefaultResourceFetcher=" + disableDefaultResourceFetcher +
-        ", analyzeOutcomeWithAI=" + analyzeOutcomeWithAI +
-        ", analyzeOutcomeWithAIOnError=" + analyzeOutcomeWithAIOnError +
-        ", llmProvider='" + llmProvider + '\'' +
-        ", llmModelName='" + llmModelName + '\'' +
         ", checkIpsCodes='" + checkIpsCodes + '\'' +
         ", bundle='" + bundle  + '\'' +
         ", suppressErrors=" + Arrays.toString(suppressErrors) +
@@ -954,7 +836,6 @@ public class CliContext {
     addExtension(ext, "showMessageIds", new BooleanType(this.showMessageIds));
     addExtension(ext, "showTerminologyRouting", new BooleanType(this.showTerminologyRouting));
     addExtension(ext, "clearTxCache", new BooleanType(this.clearTxCache));
-    addExtension(ext, "httpReadOnly", new BooleanType(this.httpReadOnly));
     addExtension(ext, "allowExampleUrls", new BooleanType(this.allowExampleUrls));
     addExtension(ext, "txServer", new UriType(this.txServer));
     addExtension(ext, "txServerCache", new BooleanType(this.txServerCache));
@@ -963,8 +844,6 @@ public class CliContext {
     addExtension(ext, "lang", new StringType(this.lang));
     addExtension(ext, "snomedCT", new StringType(this.snomedCT));
     addExtension(ext, "fhirVersion", new StringType(this.fhirVersion));
-    addExtension(ext, "xVersion", new BooleanType(this.xVersion));
-    addExtension(ext, "onlyOneEngine", new BooleanType(this.onlyOneEngine));
     addExtension(ext, "ig", new StringType(this.ig));
     // addExtension(ext, "questionnaireMode", new BooleanType(this.questionnaireMode));
     // addExtension(ext, "level", new BooleanType(this.level));
@@ -981,10 +860,6 @@ public class CliContext {
     addExtension(ext, "resolution-context", new StringType(this.resolutionContext));
     addExtension(ext, "r5-bundle-relative-reference-policy", new StringType(this.r5BundleRelativeReferencePolicy));
     addExtension(ext, "disableDefaultResourceFetcher", new BooleanType(this.disableDefaultResourceFetcher));
-    addExtension(ext, "analyzeOutcomeWithAI", new BooleanType(this.analyzeOutcomeWithAI));
-    addExtension(ext, "analyzeOutcomeWithAIOnError", new BooleanType(this.analyzeOutcomeWithAIOnError));
-    addExtension(ext, "llmProvider", new StringType(this.llmProvider));
-    addExtension(ext, "llmModelName", new StringType(this.llmModelName));
     addExtension(ext, "check-ips-codes", new BooleanType(this.checkIpsCodes));
     addExtension(ext, "bundle", new StringType(this.bundle));
     if (this.extensions != null && this.extensions.length > 0) {

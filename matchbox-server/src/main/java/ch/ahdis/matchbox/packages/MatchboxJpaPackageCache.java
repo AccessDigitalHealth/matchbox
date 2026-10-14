@@ -1,94 +1,153 @@
 package ch.ahdis.matchbox.packages;
 
 import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.jpa.dao.data.MbInstalledStructureDefinitionRepository;
+import ca.uhn.fhir.jpa.model.entity.MbInstalledStructureDefinitionEntity;
 import ca.uhn.fhir.jpa.model.entity.NpmPackageVersionResourceEntity;
 import ca.uhn.fhir.util.FhirTerser;
+import ch.ahdis.matchbox.packages.migrations.MbInstalledStructureDefinitionV1Migration;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.hl7.fhir.instance.model.api.IBase;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
 /**
- * matchbox
+ * A service to help Matchbox customizing the JPA.
  *
  * @author Quentin Ligier
  * @see <a href="https://github.com/ahdis/matchbox/issues/341">The NpmPackageVersionResourceEntity update is costly</a>
  **/
+@Service
 public class MatchboxJpaPackageCache {
-	private static final Logger ourLog = LoggerFactory.getLogger(MatchboxJpaPackageCache.class);
-
-	public static final String SD_EXTENSION_TITLE_PREFIX = "[Extension] ";
-	public static final String SD_PRIMITIVE_DT_TITLE_PREFIX = "[Primitive Datatype] ";
-	public static final String SD_COMPLEX_DT_TITLE_PREFIX = "[Complex Datatype] ";
-	public static final String SD_LOGICAL_TITLE_PREFIX = "[Logical] ";
+	private static final Logger log = LoggerFactory.getLogger(MatchboxJpaPackageCache.class);
 
 	/**
-	 * This class is not instantiable.
+	 * The Repository to access Matchbox's copy of the installed StructureDefinitions.
 	 */
-	private MatchboxJpaPackageCache() {
+	private final MbInstalledStructureDefinitionRepository installedStructureDefinitionRepository;
+
+	public MatchboxJpaPackageCache(final MbInstalledStructureDefinitionRepository installedStructureDefinitionRepository) {
+		this.installedStructureDefinitionRepository = installedStructureDefinitionRepository;
 	}
 
 	/**
-	 * This is Matchbox's hook to customize the {@link NpmPackageVersionResourceEntity}s being generated when loading a
-	 * package.
+	 * This is Matchbox's hook to intercept the {@link NpmPackageVersionResourceEntity}s being generated when loading a
+	 * package right before it gets saved in the database.
 	 * <p>
 	 * This will check the resource type and delegate to the appropriate method to customize the entity.
 	 */
-	public static void customizeNpmPackageVersionResourceEntity(final NpmPackageVersionResourceEntity entity,
-																					final IBaseResource res) {
+	public void interceptEntityBeforeSaving(final NpmPackageVersionResourceEntity entity,
+	                                        final IBaseResource res) {
 		switch (res) {
-			case org.hl7.fhir.r4.model.StructureDefinition sdR4 -> customizeStructureDefinition(entity, sdR4, null, null);
-			case org.hl7.fhir.r4b.model.StructureDefinition sdR4b ->
-				customizeStructureDefinition(entity, null, sdR4b, null);
-			case org.hl7.fhir.r5.model.StructureDefinition sdR5 -> customizeStructureDefinition(entity, null, null, sdR5);
-			case org.hl7.fhir.r4.model.StructureMap smR4 -> customizeStructureMap(entity, smR4, null, null);
-			case org.hl7.fhir.r4b.model.StructureMap smR4b -> customizeStructureMap(entity, null, smR4b, null);
-			case org.hl7.fhir.r5.model.StructureMap smR5 -> customizeStructureMap(entity, null, null, smR5);
+			case org.hl7.fhir.r4.model.StructureDefinition ignored -> this.updateStructureDefinition(entity);
+			case org.hl7.fhir.r4b.model.StructureDefinition ignored -> this.updateStructureDefinition(entity);
+			case org.hl7.fhir.r5.model.StructureDefinition ignored -> this.updateStructureDefinition(entity);
+			case org.hl7.fhir.r4.model.StructureMap smR4 -> this.updateStructureMap(entity, smR4, null, null);
+			case org.hl7.fhir.r4b.model.StructureMap smR4b -> this.updateStructureMap(entity, null, smR4b, null);
+			case org.hl7.fhir.r5.model.StructureMap smR5 -> this.updateStructureMap(entity, null, null, smR5);
 			default -> { /* do nothing */ }
 		}
 	}
 
 	/**
-	 * Updates the NpmPackageVersionResourceEntity of a StructureDefinition:
-	 * <ol>
-	 *    <li>entity.myFilename now contains the StructureDefinition.title or StructureDefinition.name</li>
-	 *    <li>entity.myCanonicalVersion now contains the StructureDefinition package version</li>
-	 * </ol>
+	 * This is Matchbox's hook to intercept the {@link NpmPackageVersionResourceEntity}s being generated when loading a
+	 * package right after it got persisted in the database.
+	 * <p>
+	 * This will check the resource type and delegate to the appropriate method to customize the entity.
 	 */
-	private static void customizeStructureDefinition(final NpmPackageVersionResourceEntity npmPackageVersionResourceEntity,
-																	 final org.hl7.fhir.r4.model.@Nullable StructureDefinition sdR4,
-																	 final org.hl7.fhir.r4b.model.@Nullable StructureDefinition sdR4b,
-																	 final org.hl7.fhir.r5.model.@Nullable StructureDefinition sdR5) {
-		// we update the canonical version to the package version for StructureDefinitions
+	public void interceptEntityAfterSaving(final NpmPackageVersionResourceEntity entity,
+														final IBaseResource res) {
+		final var installedEntity = this.buildInstalledStructureDefinitionEntity(entity, res);
+		if (installedEntity != null) {
+			this.installedStructureDefinitionRepository.save(installedEntity);
+		}
+	}
+
+	/**
+	 * Builds (without saving) the {@link MbInstalledStructureDefinitionEntity} for a StructureDefinition that was
+	 * just persisted, or {@code null} if {@code res} isn't a StructureDefinition.
+	 * <p>
+	 * Split out from {@link #interceptEntityAfterSaving} so callers that need to isolate the save in its own
+	 * transaction can build the entity first and save it independently - see
+	 * {@link MbInstalledStructureDefinitionV1Migration}, where each row's save is isolated in its own transaction so
+	 * a single bad row (e.g. a constraint violation) is simply skipped instead of aborting the whole backfill.
+	 */
+	@Nullable
+	public MbInstalledStructureDefinitionEntity buildInstalledStructureDefinitionEntity(
+			final NpmPackageVersionResourceEntity npmPackageVersionResourceEntity,
+			final IBaseResource res) {
+		return switch (res) {
+			case org.hl7.fhir.r4.model.StructureDefinition sdR4 ->
+				this.toInstalledStructureDefinitionEntity(npmPackageVersionResourceEntity, sdR4, null, null);
+			case org.hl7.fhir.r4b.model.StructureDefinition sdR4b ->
+				this.toInstalledStructureDefinitionEntity(npmPackageVersionResourceEntity, null, sdR4b, null);
+			case org.hl7.fhir.r5.model.StructureDefinition sdR5 ->
+				this.toInstalledStructureDefinitionEntity(npmPackageVersionResourceEntity, null, null, sdR5);
+			default -> null;
+		};
+	}
+
+	/**
+	 * Update a StructureDefinition before it gets saved in the database.
+	 */
+	private void updateStructureDefinition(final NpmPackageVersionResourceEntity npmPackageVersionResourceEntity) {
+		// Modify the original entity: we update the canonical version to the package version for StructureDefinitions
 		// https://github.com/ahdis/matchbox/issues/225
 		npmPackageVersionResourceEntity.setCanonicalVersion(npmPackageVersionResourceEntity.getPackageVersion().getVersionId());
+	}
 
+	/**
+	 * Builds the MbInstalledStructureDefinitionEntity for a StructureDefinition, without saving it.
+	 */
+	private MbInstalledStructureDefinitionEntity toInstalledStructureDefinitionEntity(
+			final NpmPackageVersionResourceEntity npmPackageVersionResourceEntity,
+			final org.hl7.fhir.r4.model.@Nullable StructureDefinition sdR4,
+			final org.hl7.fhir.r4b.model.@Nullable StructureDefinition sdR4b,
+			final org.hl7.fhir.r5.model.@Nullable StructureDefinition sdR5) {
+		// 1. Extract interesting info
 		final var terser = new FhirTerserWrapper(sdR4, sdR4b, sdR5);
-
-		final var type = terser.getSinglePrimitiveValueOrNull("type");
-		final var kind = terser.getSinglePrimitiveValueOrNull("kind");
-
 		var title = terser.getSinglePrimitiveValueOrNull("title");
 		if (title == null) {
 			title = terser.getSinglePrimitiveValueOrNull("name");
 		}
-		if ("primitive-type".equals(kind)) {
-			title = SD_PRIMITIVE_DT_TITLE_PREFIX + title;
-		} else if ("complex-type".equals(kind)) {
-			title = SD_COMPLEX_DT_TITLE_PREFIX + title;
-		} else if ("logical".equals(kind)) {
-			title = SD_LOGICAL_TITLE_PREFIX + title;
-		} else if ("Extension".equals(type)) {
-			title = SD_EXTENSION_TITLE_PREFIX + title;
-		} else if ("resource".equals(kind)) {
-			if (!title.startsWith(type)) {
-				title = type + " " + title;
-			}
-		} 
+		final var type = terser.getSinglePrimitiveValueOrNull("type");
+		final var kind = terser.getSinglePrimitiveValueOrNull("kind");
+		final var isValidatable = !"primitive-type".equals(kind)
+			&& !"complex-type".equals(kind)
+			&& !"Extension".equals(type);
 
-		// Change the filename for the StructureDefinition title
-		npmPackageVersionResourceEntity.setFilename(title);
+		// 2. Create our own entity for the StructureDefinition
+		final var entity = new MbInstalledStructureDefinitionEntity();
+		entity.setCanonicalUrl(npmPackageVersionResourceEntity.getCanonicalUrl());
+		entity.setTitle(truncateTitle(title, npmPackageVersionResourceEntity.getCanonicalUrl()));
+		entity.setPackageId(npmPackageVersionResourceEntity.getPackageVersion().getPackageId());
+		entity.setPackageVersion(npmPackageVersionResourceEntity.getPackageVersion().getVersionId());
+		entity.setType(type);
+		entity.setKind(kind);
+		entity.setValidatable(isValidatable);
+		entity.setNpmPackageVersionResourceEntity(npmPackageVersionResourceEntity);
+		entity.setMetaVersion(MbInstalledStructureDefinitionEntity.CURRENT_META_VERSION);
+
+		// 3. If the entity is for a Bundle resource, we mark it for later processing (see the MatchboxEventListener)
+		if ("resource".equals(kind) && "Bundle".equals(type)) {
+			entity.setDocCompTypeCode(MbInstalledStructureDefinitionEntity.DOC_BUNDLE_NEEDS_PROCESSING);
+		}
+
+		return entity;
+	}
+
+	/**
+	 * Truncates a title to {@link MbInstalledStructureDefinitionEntity#TITLE_MAX_LENGTH}.
+	 */
+	private static String truncateTitle(final String title, final String canonicalUrl) {
+		if (title == null || title.length() <= MbInstalledStructureDefinitionEntity.TITLE_MAX_LENGTH) {
+			return title;
+		}
+		log.warn("The title of the StructureDefinition '{}' is longer than {} characters, it will be truncated",
+			canonicalUrl, MbInstalledStructureDefinitionEntity.TITLE_MAX_LENGTH);
+		return title.substring(0, MbInstalledStructureDefinitionEntity.TITLE_MAX_LENGTH - 2) + "…";
 	}
 
 	/**
@@ -97,26 +156,14 @@ public class MatchboxJpaPackageCache {
 	 *    <li>entity.myFilename now contains the StructureMap.title or StructureMap.name</li>
 	 * </ol>
 	 */
-	private static void customizeStructureMap(final NpmPackageVersionResourceEntity npmPackageVersionResourceEntity,
-															final org.hl7.fhir.r4.model.@Nullable StructureMap smR4,
-															final org.hl7.fhir.r4b.model.@Nullable StructureMap smR4b,
-															final org.hl7.fhir.r5.model.@Nullable StructureMap smR5) {
+	private void updateStructureMap(final NpmPackageVersionResourceEntity npmPackageVersionResourceEntity,
+	                                final org.hl7.fhir.r4.model.@Nullable StructureMap smR4,
+	                                final org.hl7.fhir.r4b.model.@Nullable StructureMap smR4b,
+	                                final org.hl7.fhir.r5.model.@Nullable StructureMap smR5) {
 		final var terser = new FhirTerserWrapper(smR4, smR4b, smR5);
 
 		// Change the filename for the StructureDefinition title
 		npmPackageVersionResourceEntity.setFilename(terser.getSinglePrimitiveValueOrNull("title"));
-	}
-
-	/**
-	 * Checks if a StructureDefinition is validatable, i.e. if it is returned in the list of profiles supported
-	 * by the server in the $validate OperationDefinition and in the Gazelle Webservice.
-	 */
-	public static boolean structureDefinitionIsValidatable(final String title) {
-		// All those prefixes are added when loading the IGs, so we can filter out the profiles
-		return !title.startsWith(SD_EXTENSION_TITLE_PREFIX)
-			&& !title.startsWith(SD_PRIMITIVE_DT_TITLE_PREFIX)
-			&& !title.startsWith(SD_COMPLEX_DT_TITLE_PREFIX)
-			&& !title.startsWith(SD_LOGICAL_TITLE_PREFIX);
 	}
 
 	// A small wrapper around FhirTerser to handle the different FHIR versions of a resource

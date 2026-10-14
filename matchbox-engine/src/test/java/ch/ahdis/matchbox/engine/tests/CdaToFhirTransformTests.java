@@ -174,7 +174,8 @@ class CdaToFhirTransformTests {
 				.map(e -> e.getResource())
 				.findFirst()
 				.orElse(null);
-		assertEquals("058091", patient.getAddressFirstRep().getLine().getFirst().getExtension().getFirst().getValue().toString());
+		assertEquals("058091",
+			patient.getAddressFirstRep().getLine().get(0).getExtension().get(0).getValue().toString());
 	}
 
 	@Test
@@ -244,6 +245,20 @@ class CdaToFhirTransformTests {
 		assertNotNull(resource);
 	}
 
+	@Test
+	void TestObservationCd() throws FHIRException, IOException {
+		InputStream in = getResourceAsStream("cda-it-observation-cd.xml");
+
+		String cdaObservation = IOUtils.toString(in, StandardCharsets.UTF_8);
+		Resource resource = getEngine().transformToFhir(cdaObservation,
+				false,
+				"http://salute.gov.it/ig/cda-fhir-maps/StructureMap/TestObservation");
+		Observation obs = (Observation) resource;
+
+		assertEquals("112283007", obs.getValueCodeableConcept().getCoding().get(0).getCode());
+
+		assertNotNull(resource);
+	}
 
 	@Test
 	void TestObservationCondition() throws FHIRException, IOException {

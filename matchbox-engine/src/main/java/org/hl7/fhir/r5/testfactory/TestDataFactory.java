@@ -40,7 +40,7 @@ import org.hl7.fhir.r5.testfactory.dataprovider.ValueSetDataProvider;
 import org.hl7.fhir.utilities.CommaSeparatedStringBuilder;
 import org.hl7.fhir.utilities.FhirPublication;
 import org.hl7.fhir.utilities.FileUtilities;
-import org.hl7.fhir.utilities.MarkedToMoveToAdjunctPackage;
+
 import org.hl7.fhir.utilities.Utilities;
 import org.hl7.fhir.utilities.filesystem.ManagedFileAccess;
 import org.hl7.fhir.utilities.http.HTTPResult;
@@ -49,7 +49,7 @@ import org.hl7.fhir.utilities.json.JsonException;
 import org.hl7.fhir.utilities.json.model.JsonObject;
 import org.hl7.fhir.utilities.json.parser.JsonParser;
 
-@MarkedToMoveToAdjunctPackage
+
 @Slf4j
 public class TestDataFactory {
 
@@ -176,6 +176,19 @@ public class TestDataFactory {
     public List<Base> execute(FHIRPathEngine engine, Object appContext, List<Base> focus, List<List<Base>> parameters) {
 
       List<Base> res = new ArrayList<Base>();
+      // matchbox patch for https://github.com/hapifhir/org.hl7.fhir.core/issues/1942
+      if (focus.get(0)!=null && focus.get(0) instanceof DataTable && parameters.size() == 3 && parameters.get(0).size() == 1 && parameters.get(1).size() == 1 && parameters.get(2).size() == 1) {
+        String lcol = parameters.get(0).get(0).primitiveValue();
+        String val = parameters.get(1).get(0).primitiveValue();
+        String rcol = parameters.get(2).get(0).primitiveValue();
+        DataTable tbl = (DataTable) focus.get(0);
+        if (lcol != null && val != null && rcol != null && tbl != null) {
+          String s = tbl.lookup(lcol, val, rcol);
+          if (!Utilities.noString(s)) {
+            res.add(new StringType(s));
+          }
+        }
+      }
       if (focus.get(0) instanceof BaseTableWrapper && parameters.size() == 4 && parameters.get(0).size() == 1 && parameters.get(1).size() == 1 && parameters.get(2).size() == 1 && parameters.get(3).size() == 1) {
         BaseTableWrapper dt = (BaseTableWrapper) focus.get(0);
         String table = parameters.get(0).get(0).primitiveValue(); 
@@ -184,21 +197,6 @@ public class TestDataFactory {
         String rcol = parameters.get(3).get(0).primitiveValue();
         if (table != null && lcol != null && val != null && rcol != null) {
           DataTable tbl = dt.getTables().get(table);
-          if (tbl != null) {
-            String s = tbl.lookup(lcol, val, rcol);
-            if (!Utilities.noString(s)) {
-              res.add(new StringType(s));
-            }
-          }
-        }
-      }
-      // matchbox patch for https://github.com/hapifhir/org.hl7.fhir.core/issues/1942
-      if (focus.get(0)!=null && focus.get(0) instanceof DataTable && parameters.size() == 3 && parameters.get(0).size() == 1 && parameters.get(1).size() == 1 && parameters.get(2).size() == 1) {
-        String lcol = parameters.get(0).get(0).primitiveValue();
-        String val = parameters.get(1).get(0).primitiveValue();
-        String rcol = parameters.get(2).get(0).primitiveValue();
-        DataTable tbl = (DataTable) focus.get(0);
-        if (lcol != null && val != null && rcol != null) {
           if (tbl != null) {
             String s = tbl.lookup(lcol, val, rcol);
             if (!Utilities.noString(s)) {
@@ -280,8 +278,13 @@ public class TestDataFactory {
   private void executeProfile() throws IOException {
     try {
       checkDownloadBaseData();
-      
-      TableDataProvider tbl = loadTable(Utilities.path(rootFolder, details.asString( "data")));
+
+      String dataWithSheetInfo = details.asString("data");
+      String[] split = splitDataWithSheetInfo(dataWithSheetInfo);
+      TableDataProvider.SheetInfo sheetInfo = split[1] == null ? new TableDataProvider.SheetInfo(null, null) :
+          TableDataProvider.SheetInfo.fromString(split[1]);
+
+      TableDataProvider tbl = loadTable(Utilities.path(rootFolder, split[0]), sheetInfo);
       Map<String, DataTable> tables = new HashMap<>();
       if (details.has("tables")) {
         JsonObject tablesJ = details.getJsonObject("tables");
@@ -295,7 +298,7 @@ public class TestDataFactory {
       factory.setTesting(testing);
       factory.setMarkProfile(details.asBoolean("mark-profile"));
       String purl = details.asString( "profile");
-      StructureDefinition profile = context.fetchResource(StructureDefinition.class, purl);
+      StructureDefinition profile = context.fetchResource(StructureDefinition.class, purl, IWorkerContext.VersionResolutionRules.defaultRule());
       if (profile == null) {
         error("Unable to find profile "+purl);
       } else if (!profile.hasSnapshot()) {
@@ -326,12 +329,24 @@ public class TestDataFactory {
     }
   }
 
+  private String[] splitDataWithSheetInfo(String dataWithSheetInfo) {
+    if (dataWithSheetInfo.contains(";")) {
+      int splitIndex = dataWithSheetInfo.lastIndexOf(";");
+      if (splitIndex + 1 < dataWithSheetInfo.length()) {
+        final String path = dataWithSheetInfo.substring(0, splitIndex);
+        final String sheetInfo = dataWithSheetInfo.substring(splitIndex + 1);
+        return new String[]{path, sheetInfo};
+      }
+    }
+    return new String[]{dataWithSheetInfo, null};
+  }
+
   private void checkDownloadBaseData() throws IOException {
     localData = ManagedFileAccess.file(Utilities.path("[tmp]", "fhir-test-data.db"));  
     File localInfo = ManagedFileAccess.file(Utilities.path("[tmp]", "fhir-test-data.json"));  
     try {
       JsonObject local = localInfo.exists() ? JsonParser.parseObject(localInfo) : null; 
-      JsonObject json = JsonParser.parseObjectFromUrl("http://fhir.org/downloads/test-data-versions.json");
+      JsonObject json = JsonParser.parseObjectFromUrl("https://www.fhir.org/downloads/test-data-versions.json");
       JsonObject current = json.forceArray("versions").get(0).asJsonObject();
       if (current == null) {
         throw new FHIRException("No current information about FHIR downloads");
@@ -345,7 +360,7 @@ public class TestDataFactory {
         throw new FHIRException("No filename on current information about FHIR downloads");
       }
       if (local == null || !date.equals(local.asString("date"))) {
-        HTTPResult data = ManagedWebAccess.get(Utilities.strings("general"), "http://fhir.org/downloads/"+filename);
+        HTTPResult data = ManagedWebAccess.get(Utilities.strings("general"), "https://www.fhir.org/downloads/"+filename);
         FileUtilities.bytesToFile(data.getContent(), localData);
         local = new JsonObject();
         local.set("date", date);
@@ -354,7 +369,7 @@ public class TestDataFactory {
     } catch (Exception e) {
       if (!localData.exists()) {
         log("Unable to download copy of FHIR testing data: "+ e.getMessage());
-        throw new FHIRException("Unable to download copy of FHIR testing data", e);
+        throw new FHIRException("Unable to download copy of FHIR testing data: "+e.getMessage(), e);
       }
     }
   }
@@ -390,9 +405,9 @@ public class TestDataFactory {
     }
   }
 
-  private TableDataProvider loadTable(String path) throws IOException, InvalidFormatException {
-    log("Load Data From "+path);
-    return loadTableProvider(path, locale);
+  private TableDataProvider loadTable(String path, TableDataProvider.SheetInfo sheetInfo) throws IOException, InvalidFormatException {
+    log("Load Data From "+ path + " with sheet info: " + sheetInfo);
+    return loadTableProvider(path, sheetInfo, locale);
   }
 
   private void error(String msg) throws IOException {
@@ -416,7 +431,7 @@ public class TestDataFactory {
         JsonObject tablesJ = details.getJsonObject("tables");
         for (String n : tablesJ.getNames()) {
           DataTable v = loadData(Utilities.path(rootFolder, tablesJ.asString(n)));
-          liquid.getVars().put(n, v);
+          liquid.getVars().put(n, List.of(v));
           tables.put(n, v);
         } 
       }
@@ -486,9 +501,14 @@ public class TestDataFactory {
     return new ByteArrayInputStream(FileUtilities.stringToBytes(bundle));
   }
 
-  private DataTable loadData(String path) throws FHIRException, IOException, InvalidFormatException {
-    log("Load Data From "+path);
-    TableDataProvider tbl = loadTableProvider(path, locale);
+  private DataTable loadData(String pathWithSheetInfo) throws FHIRException, IOException {
+    log("Load Data From "+pathWithSheetInfo);
+
+    String[] split = splitDataWithSheetInfo(pathWithSheetInfo);
+    TableDataProvider.SheetInfo sheetInfo = split[1] == null ? new TableDataProvider.SheetInfo(null, null) :
+      TableDataProvider.SheetInfo.fromString(split[1]);
+
+    TableDataProvider tbl = loadTableProvider(split[0], sheetInfo, locale);
 
     DataTable dt = new DataTable();
     for (String n : tbl.columns()) {
@@ -511,10 +531,10 @@ public class TestDataFactory {
     return dt;
   }
 
-  public TableDataProvider loadTableProvider(String path, Locale locale) {
+  public TableDataProvider loadTableProvider(String path, TableDataProvider.SheetInfo sheetInfo, Locale locale) {
     TableDataProvider tbl;
     if (Utilities.isAbsoluteUrl(path)) {
-      ValueSet vs = context.findTxResource(ValueSet.class, path);
+      ValueSet vs = context.findTxResource(ValueSet.class, path, IWorkerContext.VersionResolutionRules.defaultRule());
       if (vs == null) {
         throw new FHIRException("ValueSet "+path+" not found");
       } else {
@@ -526,7 +546,7 @@ public class TestDataFactory {
         }
       }
     } else {
-      tbl = TableDataProvider.forFile(path, locale);
+      tbl = TableDataProvider.forFile(path, sheetInfo, locale);
     }
     return tbl;
   }

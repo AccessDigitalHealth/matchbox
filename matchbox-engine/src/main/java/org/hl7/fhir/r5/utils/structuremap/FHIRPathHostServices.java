@@ -3,34 +3,52 @@ package org.hl7.fhir.r5.utils.structuremap;
 import org.apache.commons.lang3.NotImplementedException;
 import org.hl7.fhir.exceptions.FHIRException;
 import org.hl7.fhir.exceptions.PathEngineException;
+import org.hl7.fhir.r5.context.IWorkerContext;
 import org.hl7.fhir.r5.elementmodel.Element;
+import org.hl7.fhir.r5.extensions.ExtensionUtilities;
 import org.hl7.fhir.r5.fhirpath.FHIRPathEngine;
 import org.hl7.fhir.r5.fhirpath.IHostApplicationServices;
 import org.hl7.fhir.r5.fhirpath.TypeDetails;
 import org.hl7.fhir.r5.fhirpath.FHIRPathUtilityClasses.FunctionDetails;
-import org.hl7.fhir.r5.fhirpath.IHostApplicationServices;
 import org.hl7.fhir.r5.model.Base;
+import org.hl7.fhir.r5.model.Identifier;
 import org.hl7.fhir.r5.model.Resource;
 import org.hl7.fhir.r5.model.ValueSet;
-import org.hl7.fhir.r5.elementmodel.Manager.FhirFormat;
 import org.hl7.fhir.r5.utils.validation.IResourceValidator;
-import org.hl7.fhir.utilities.MarkedToMoveToAdjunctPackage;
+
 import org.hl7.fhir.utilities.fhirpath.FHIRPathConstantEvaluationMode;
 import org.hl7.fhir.utilities.validation.ValidationMessage;
+
+import org.hl7.fhir.r5.elementmodel.Manager.FhirFormat;
 import org.hl7.fhir.validation.instance.utils.ValidationContext;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-@MarkedToMoveToAdjunctPackage
+
 public class FHIRPathHostServices implements IHostApplicationServices {
 
   private final StructureMapUtilities structureMapUtilities;
-  // matchbox patch FML resolve() in Bundle #359
   private IHostApplicationServices validationHostServices;
+
   public FHIRPathHostServices(StructureMapUtilities structureMapUtilities) {
     this.structureMapUtilities = structureMapUtilities;
+  }
+
+  /**
+   * we need to access the validation host services, we do this indirectly through matchboxengine
+   * matchbox patch FML resolve() in Bundle #359
+   * @return
+   * @throws IOException
+   */
+  private IHostApplicationServices getValidationHostServices() throws IOException {
+    if (validationHostServices != null)
+      return validationHostServices;
+    FHIRPathEngine fpe = ((ch.ahdis.matchbox.mappinglanguage.MatchboxStructureMapUtilities) structureMapUtilities).getEngine()
+            .getValidator(FhirFormat.JSON).getFHIRPathEngine();
+    validationHostServices = fpe.getHostServices();
+    return validationHostServices;
   }
 
   public List<Base> resolveConstant(FHIRPathEngine engine, Object appContext, String name, FHIRPathConstantEvaluationMode mode) throws PathEngineException {
@@ -62,40 +80,31 @@ public class FHIRPathHostServices implements IHostApplicationServices {
 
   @Override
   public FunctionDetails resolveFunction(FHIRPathEngine engine, String functionName) {
-    return null; // throw new Error("Not Implemented Yet");
+    return structureMapUtilities.getServices() == null ? null : structureMapUtilities.getServices().resolveFunction(engine, functionName);
   }
 
   @Override
   public TypeDetails checkFunction(FHIRPathEngine engine, Object appContext, String functionName, TypeDetails focus, List<TypeDetails> parameters) throws PathEngineException {
-    throw new Error("Not Implemented Yet");
+    if (structureMapUtilities.getServices() == null) {
+      throw new PathEngineException("Unknown function '" + functionName + "'");
+    }
+    return structureMapUtilities.getServices().checkFunction(engine, appContext, functionName, focus, parameters);
   }
 
   @Override
   public List<Base> executeFunction(FHIRPathEngine engine, Object appContext, List<Base> focus, String functionName, List<List<Base>> parameters) {
-    throw new Error("Not Implemented Yet");
-  }
-
-  /**
-   * we need to access the validation host services, we do this indirectly through matchboxengine
-   * matchbox patch FML resolve() in Bundle #359
-   * @return
-   * @throws IOException
-   */
-  private IHostApplicationServices getValidationHostServices() throws IOException {
-    if (validationHostServices != null)
-      return validationHostServices;
-    FHIRPathEngine fpe = ((ch.ahdis.matchbox.mappinglanguage.MatchboxStructureMapUtilities) structureMapUtilities).getEngine()
-            .getValidator(FhirFormat.JSON).getFHIRPathEngine();
-    validationHostServices = fpe.getHostServices();
-    return validationHostServices;
+    if (structureMapUtilities.getServices() == null) {
+      throw new Error("Not Implemented Yet");
+    }
+    return structureMapUtilities.getServices().executeFunction(engine, appContext, focus, functionName, parameters);
   }
 
   @Override
-  public Base resolveReference(FHIRPathEngine engine, Object appContext, String url, Base refContext) throws FHIRException {
+  public Base resolveReference(FHIRPathEngine engine, Object appContext, String url, Identifier identifier, Base refContext) throws FHIRException {
     // matchbox patch FML resolve() in Bundle #359
     try {
         ValidationContext valContext = new ValidationContext(null, (Element) refContext);
-        Base base = getValidationHostServices().resolveReference(engine, valContext, url, refContext);
+        Base base = getValidationHostServices().resolveReference(engine, valContext, url, identifier, refContext);
         if (base != null) {
           return base;
         }
@@ -118,7 +127,7 @@ public class FHIRPathHostServices implements IHostApplicationServices {
   @Override
   public boolean conformsToProfile(FHIRPathEngine engine, Object appContext, Base item, String url) throws FHIRException {
     // IResourceValidator val = structureMapUtilities.getWorker().newValidator();
-    // we need the same conformToProfile context as we have in the matchbox engine
+    // matchbox patch: we need the same conformToProfile context as we have in the matchbox engine
     // matchbox 3.1.0
     IResourceValidator val = null;
     try {
@@ -142,7 +151,7 @@ public class FHIRPathHostServices implements IHostApplicationServices {
 
   @Override
   public ValueSet resolveValueSet(FHIRPathEngine engine, Object appContext, String url) {
-	return structureMapUtilities.getWorker().findTxResource(ValueSet.class, url);
+	  return structureMapUtilities.getWorker().findTxResource(ValueSet.class, url, IWorkerContext.VersionResolutionRules.defaultRule());
   }
 
   @Override

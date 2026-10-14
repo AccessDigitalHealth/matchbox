@@ -1,16 +1,17 @@
 import {IssueSeverity, OperationResult} from '../util/operation-result';
 import {ValidationParameter} from "./validation-parameter";
+import { FhirResource, parseFhirResource } from '../util/fhir-resource-parser';
 
 export class ValidationEntry {
   readonly filename: string; // "package/package.json",
-  readonly resource: string;
+  readonly content: string;
+  readonly resource: FhirResource;
   resourceType: string;
-  resourceId: string;
-  readonly mimetype: string;
+  format: FhirFormat;
+  resourceId: string | null;
   result: OperationResult | undefined;
-  aiRecommendation: string;
   readonly extractedProfiles: string[] = [];
-  validationProfile: string;
+  validationProfile: string | null;
   ig?: string;
   readonly date: Date;
   readonly validationParameters: ValidationParameter[] = [];
@@ -22,31 +23,48 @@ export class ValidationEntry {
               settings: ValidationParameter[] = [],
               validationProfile: string | null = null) {
     this.filename = filename;
-    this.resource = resource;
+    this.content = resource;
     this.validationParameters = settings;
 
     if (mimetype) {
-      this.mimetype = mimetype;
+      switch (mimetype) {
+        case 'application/fhir+json':
+        case 'application/json':
+        case 'json':
+          this.format = FhirFormat.JSON;
+          break;
+        case 'application/fhir+xml':
+        case 'application/xml':
+        case 'text/xml':
+        case 'xml':
+          this.format = FhirFormat.XML;
+          break;
+        default:
+          throw new Error(`Unsupported mimetype ${mimetype}`);
+      }
     } else {
       if (filename.endsWith('.json')) {
-        this.mimetype = 'application/fhir+json';
+        this.format = FhirFormat.JSON;
       } else {
-        this.mimetype = 'application/fhir+xml';
+        this.format = FhirFormat.XML;
       }
     }
 
     this.date = new Date();
     this.validationProfile = validationProfile;
 
-    try {
-      if (this.mimetype === 'application/fhir+json') {
-        this.extractJsonInfo();
-      } else {
-        this.extractXmlInfo();
-      }
-    } catch (e) {
-      console.error('Error parsing resource to validate: ', e);
+    const parsed = parseFhirResource(filename, resource);
+    if (!parsed) {
+      throw new Error(`Failed to parse resource from file ${filename}`);
     }
+    this.resource = parsed;
+    this.resourceType = parsed.resourceType;
+    this.resourceId = parsed.id;
+    this.extractedProfiles.push(...parsed.profiles);
+  }
+
+  public get mediaType() {
+    return (this.format == FhirFormat.JSON) ? 'application/fhir+json' : 'application/fhir+xml';
   }
 
   getErrors(): number | undefined {
@@ -74,46 +92,6 @@ export class ValidationEntry {
   setOperationOutcome(operationOutcome: fhir.r4.OperationOutcome): void {
     this.result = OperationResult.fromOperationOutcome(operationOutcome);
   }
-
-  setAiRecommendation(operationOutcome: fhir.r4.OperationOutcome): void {
-    this.aiRecommendation = operationOutcome.text.div
-  }
-
-  extractJsonInfo(): void {
-    const res = <fhir.r4.Resource>JSON.parse(this.resource);
-    if (res?.resourceType) {
-      this.resourceType = res.resourceType;
-      this.resourceId = res.id;
-    }
-    if (res.meta?.profile) {
-      this.extractedProfiles.push(...res.meta.profile);
-    }
-  }
-
-  extractXmlInfo(): void {
-    let pos = this.resource.indexOf('<?') + 1;
-    let posLeft = this.resource.indexOf('<', pos);
-    let posRight = this.resource.indexOf('>', posLeft);
-    if (posLeft < posRight) {
-      let tag = this.resource.substring(posLeft + 1, posRight - 1);
-      let posTag = tag.indexOf(' xmlns');
-      if (posTag > 0) {
-        tag = tag.substring(0, posTag);
-      }
-      posTag = tag.indexOf(':');
-      if (posTag > 0) {
-        tag = tag.substring(posTag + 1);
-      }
-      this.resourceType = tag;
-
-      let posProfileLeft = this.resource.indexOf('profile', posRight);
-      if (posProfileLeft > 0) {
-        let posProfileValue = this.resource.indexOf('value="', posProfileLeft) + 7;
-        let posProfileValueRight = this.resource.indexOf('"', posProfileValue);
-        if (posProfileValue < posProfileValueRight) {
-          this.extractedProfiles.push(this.resource.substring(posProfileValue, posProfileValueRight));
-        }
-      }
-    }
-  }
 }
+
+export enum FhirFormat { JSON, XML}

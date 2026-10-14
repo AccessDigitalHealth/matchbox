@@ -5,14 +5,17 @@ import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.context.RuntimeResourceDefinition;
 import ca.uhn.fhir.jpa.starter.Application;
 
+import ch.ahdis.matchbox.util.MatchboxEngineSupport;
 import org.apache.commons.io.FileUtils;
 import org.hl7.fhir.instance.model.api.*;
 import org.hl7.fhir.r4.model.OperationOutcome;
 import org.hl7.fhir.r4.model.OperationOutcome.IssueSeverity;
 import org.hl7.fhir.r4.model.OperationOutcome.OperationOutcomeIssueComponent;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.core.io.ClassPathResource;
@@ -23,6 +26,10 @@ import org.springframework.test.context.ContextConfiguration;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -30,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @SpringBootTest(webEnvironment = WebEnvironment.DEFINED_PORT)
 @ContextConfiguration(classes = { Application.class })
-@ActiveProfiles("test-r5onr4")
+@ActiveProfiles({"tests", "test-r5onr4"})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public class MatchboxApiR5onR4Test {
@@ -52,16 +59,24 @@ public class MatchboxApiR5onR4Test {
 
   private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MatchboxApiR5onR4Test.class);
 
-  private String targetServer = "http://localhost:8085/matchboxv3/fhir";
+  private String targetServer = "http://localhost:8085/matchboxv3";
 
   private final FhirContext context = FhirContext.forR4Cached();
+  private final HttpClient httpClient = HttpClient.newHttpClient();
+
+  @Autowired
+  private MatchboxEngineSupport matchboxEngineSupport;
 
   @BeforeAll
   void waitUntilStartup() throws Exception {
-    Thread.sleep(10000); // give the server some time to start up
-    ValidationClient validationClient = new ValidationClient(this.context, this.targetServer);
-    validationClient.capabilities();
+    ServerStartup.awaitServerReady(this.targetServer, this.matchboxEngineSupport);
 		CompareUtil.logMemory();
+  }
+
+  @AfterAll
+  void releaseContext() {
+    // JUnit can keep the PER_CLASS test instance until the end of the run: don't let it retain the closed context
+    this.matchboxEngineSupport = null;
   }
 
   private static IBaseExtension<?, ?> getMatchboxValidationExtension(FhirContext theCtx,
@@ -125,7 +140,7 @@ public class MatchboxApiR5onR4Test {
 
   @Test
   public void validatePatientRawR5() {
-    ValidationClient validationClient = new ValidationClient(this.context, this.targetServer);
+    ValidationClient validationClient = new ValidationClient(this.context, this.targetServer + "/fhir");
 
     String patient = "<Patient xmlns=\"http://hl7.org/fhir\">\n" + "            <id value=\"example\"/>\n"
         + "            <text>\n" + "               <status value=\"generated\"/>\n"
@@ -148,7 +163,7 @@ public class MatchboxApiR5onR4Test {
 
   @Test
   public void verifyCachingImplementationGuides() {
-    ValidationClient validationClient = new ValidationClient(this.context, this.targetServer);
+    ValidationClient validationClient = new ValidationClient(this.context, this.targetServer + "/fhir");
 
     String resource = "<Practitioner xmlns=\"http://hl7.org/fhir\">\n" + //
             "  <identifier>\n" + //
@@ -163,7 +178,7 @@ public class MatchboxApiR5onR4Test {
     String sessionIdCore = getSessionId(this.context, operationOutcome);
     assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome));
     assertEquals("hl7.fhir.r5.core#5.0.0", getIg(this.context, operationOutcome));
-    assertEquals(this.targetServer.replace("/fhir", "/tx"), this.getTxServer(this.context, operationOutcome));
+    assertEquals(this.targetServer + "/tx", this.getTxServer(this.context, operationOutcome));
 
     // check that the cached validation engine of core gets used
     operationOutcome = validationClient.validate(resource, profileCore);
@@ -176,7 +191,7 @@ public class MatchboxApiR5onR4Test {
   // https://gazelle.ihe.net/jira/browse/EHS-431
   public void validateEhs431() throws IOException {
     //
-    ValidationClient validationClient = new ValidationClient(this.context, this.targetServer);
+    ValidationClient validationClient = new ValidationClient(this.context, this.targetServer + "/fhir");
 
     validationClient.capabilities();
 
@@ -193,7 +208,7 @@ public class MatchboxApiR5onR4Test {
   // https://gazelle.ihe.net/jira/browse/EHS-419
   public void validateEhs419() throws IOException {
     //
-    ValidationClient validationClient = new ValidationClient(this.context, this.targetServer);
+    ValidationClient validationClient = new ValidationClient(this.context, this.targetServer + "/fhir");
 
     validationClient.capabilities();
 
@@ -203,6 +218,56 @@ public class MatchboxApiR5onR4Test {
 
     String responseInJson = new org.hl7.fhir.r4.formats.JsonParser().composeString((OperationOutcome) operationOutcome);
     assertEquals(0, getValidationFailures((OperationOutcome) operationOutcome), responseInJson);
+  }
+
+  @Test
+  void validateCodeWithInlineValueSet() throws Exception {
+    final String parametersJson = """
+      {
+        "resourceType": "Parameters",
+        "parameter": [
+          {
+            "name": "coding",
+            "valueCoding": {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActStatus",
+              "code": "active"
+            }
+          },
+          {
+            "name": "valueSet",
+            "resource": {
+              "resourceType": "ValueSet",
+              "url": "http://example.org/test-vs",
+              "status": "active",
+              "compose": {
+                "include": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ActStatus",
+                    "concept": [
+                      { "code": "active" },
+                      { "code": "suspended" }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+      """;
+
+    final HttpRequest request = HttpRequest.newBuilder(
+          new URI(targetServer + "/tx/ValueSet/$validate-code"))
+      .POST(HttpRequest.BodyPublishers.ofString(parametersJson))
+      .header("Content-Type", "application/fhir+json")
+      .header("Accept", "application/fhir+json")
+      .build();
+
+    final var response = this.httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    log.debug("$validate-code response status: {}", response.statusCode());
+    log.debug("$validate-code response body: {}", response.body());
+
+    assertEquals(200, response.statusCode());
   }
 
   private String getContent(String resourceName) throws IOException {

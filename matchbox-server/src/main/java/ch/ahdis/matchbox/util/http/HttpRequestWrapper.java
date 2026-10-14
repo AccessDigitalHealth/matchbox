@@ -17,7 +17,6 @@ import org.springframework.http.MediaType;
 
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -190,7 +189,12 @@ public class HttpRequestWrapper {
 		// Check the '_format' parameter first
 		final var formatParam = this.request.getParameter("_format");
 		if (formatParam != null) {
-			final var format = this.mapMediaType(MediaType.parseMediaType(formatParam));
+			final FhirMediaType format;
+			if (formatParam.contains("/")) {
+				format = this.mapMediaType(MediaType.parseMediaType(formatParam));
+			} else {
+				format = this.mapMediaType(new MediaType(formatParam));
+			}
 			if (format == null) {
 				throw new InvalidRequestException(
 					"Unsupported _format parameter: '%s'. Supported types are: %s".formatted(

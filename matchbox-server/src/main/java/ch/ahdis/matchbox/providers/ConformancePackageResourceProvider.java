@@ -19,8 +19,9 @@ import ca.uhn.fhir.rest.server.SimpleBundleProvider;
 import ca.uhn.fhir.rest.server.exceptions.MethodNotAllowedException;
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import ch.ahdis.matchbox.CliContext;
+import ch.ahdis.matchbox.config.MatchboxFhirVersion;
+import ch.ahdis.matchbox.config.property.MatchboxFhirContextProperties;
 import ch.ahdis.matchbox.engine.MatchboxEngine;
-import ch.ahdis.matchbox.engine.exception.MatchboxUnsupportedFhirVersionException;
 import ch.ahdis.matchbox.util.CrossVersionResourceUtils;
 import ch.ahdis.matchbox.util.MatchboxEngineSupport;
 import ch.ahdis.matchbox.util.MatchboxServerUtils;
@@ -33,6 +34,7 @@ import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.instance.model.api.IDomainResource;
 import org.hl7.fhir.instance.model.api.IIdType;
 import org.hl7.fhir.r4.model.MetadataResource;
+import org.hl7.fhir.r5.context.IWorkerContext;
 import org.hl7.fhir.r5.model.BooleanType;
 import org.hl7.fhir.r5.model.CanonicalType;
 import org.hl7.fhir.r5.model.StringType;
@@ -74,7 +76,13 @@ public class ConformancePackageResourceProvider<R4 extends MetadataResource, R4B
 	private FhirContext myCtx;
 
 	@Autowired
+	private MatchboxFhirVersion matchboxFhirVersion;
+
+	@Autowired
 	protected CliContext cliContext;
+
+	@Autowired
+	private MatchboxFhirContextProperties matchboxContext;
 
 	private String resourceType;
 	protected final Class<R4> classR4;
@@ -144,7 +152,7 @@ public class ConformancePackageResourceProvider<R4 extends MetadataResource, R4B
 			});
 		}
 
-		if (cliContext.getOnlyOneEngine()) {
+		if (this.matchboxContext.isOnlyOneEngine()) {
 			List<org.hl7.fhir.r5.model.Resource> resources = new ArrayList<>();
 			MatchboxEngine matchboxEngine = matchboxEngineSupport.getMatchboxEngine(null, cliContext,
 																											false, false);
@@ -152,14 +160,24 @@ public class ConformancePackageResourceProvider<R4 extends MetadataResource, R4B
 
 				if (theUrl != null) {
 					String url = theUrl.getValuesAsQueryTokens().get(0).getValuesAsQueryTokens().get(0).getValue();
-					R5 r = matchboxEngine.getContext().fetchResource(classR5, url);
+					R5 r = matchboxEngine.getContext().fetchResource(classR5, url, IWorkerContext.VersionResolutionRules.defaultRule());
 					if (r != null)
 						resources.add(r);
 				} else {
 					resources.addAll(matchboxEngine.getContext().fetchResourcesByType(classR5));
 				}
 
-				return httpWrapper.makeBundleProviderFromR5(resources);
+				final int offset = (theOffset == null ? 0 : theOffset);
+				final int count = (theCount == null ? 20 : theCount);
+				final int totalSize = resources.size();
+				final int toIndex = Math.min(offset + count, totalSize);
+				final var paged = (offset < totalSize) ? resources.subList(offset, toIndex) : List.<org.hl7.fhir.r5.model.Resource>of();
+
+				final SimpleBundleProvider bundleProvider = httpWrapper.makeBundleProviderFromR5(paged);
+				bundleProvider.setSize(totalSize);
+				bundleProvider.setCurrentPageOffset(offset);
+				bundleProvider.setCurrentPageSize(count);
+				return bundleProvider;
 			}
 		}
 		return null;
@@ -174,10 +192,14 @@ public class ConformancePackageResourceProvider<R4 extends MetadataResource, R4B
 
 			final int offset = 0;
 			final int count = 1;
+			// resources loaded from the JPA package cache have a numeric id, resources added at runtime to the engine
+			// (see the create/update methods) have a string id, so we only query the package cache for numeric ids
 			Slice<NpmPackageVersionResourceEntity> outcome = null;
-			outcome = myPackageVersionResourceDao.findByResourceTypeById(PageRequest.of(offset, count),
-																							 resourceType,
-																							 theId.getIdPartAsLong());
+			if (theId.isIdPartValidLong()) {
+				outcome = myPackageVersionResourceDao.findByResourceTypeById(PageRequest.of(offset, count),
+																								 resourceType,
+																								 theId.getIdPartAsLong());
+			}
 			if (outcome != null && outcome.getSize() == 1) {
 				NpmPackageVersionResourceEntity res = outcome.toList().getFirst();
 				IBaseResource resource = (IBaseResource) loadPackageEntityAdjustId(outcome.toList().getFirst());
@@ -199,7 +221,7 @@ public class ConformancePackageResourceProvider<R4 extends MetadataResource, R4B
 
 				// if is current we check if already loaded in a own engine and might be updated
 				// in the cache
-				if (res.getPackageVersion().isCurrentVersion() || cliContext.getOnlyOneEngine()) {
+				if (res.getPackageVersion().isCurrentVersion() || this.matchboxContext.isOnlyOneEngine()) {
 					MatchboxEngine matchboxEngine = matchboxEngineSupport.getMatchboxEngine(url,
 																													cliContext,
 																													false,
@@ -213,7 +235,11 @@ public class ConformancePackageResourceProvider<R4 extends MetadataResource, R4B
 				}
 				return loadPackageEntityAdjustId(outcome.toList().getFirst());
 			} else {
-				return matchboxEngineSupport.getCachedResource(resourceType, theId.getIdPart());
+				final IBaseResource cached = matchboxEngineSupport.getCachedResource(resourceType, theId.getIdPart());
+				if (cached == null) {
+					throw new ResourceNotFoundException(theId);
+				}
+				return cached;
 			}
 		});
 	}
@@ -228,7 +254,7 @@ public class ConformancePackageResourceProvider<R4 extends MetadataResource, R4B
 
 		CliContext cliContext = new CliContext(this.cliContext);
 		cliContext.setFhirVersion(theResource.getStructureFhirVersionEnum().getFhirVersionString());
-		if (cliContext.getOnlyOneEngine()) {
+		if (this.matchboxContext.isOnlyOneEngine()) {
 
 			if (classR4.isInstance(theResource)) {
 				R4 r = classR4.cast(theResource);
@@ -299,7 +325,7 @@ public class ConformancePackageResourceProvider<R4 extends MetadataResource, R4B
 		String url = null;
 		CliContext cliContext = new CliContext(this.cliContext);
 		cliContext.setFhirVersion(getFhirVersion(theResource));
-		if (cliContext.getOnlyOneEngine()) {
+		if (this.matchboxContext.isOnlyOneEngine()) {
 			if (classR4.isInstance(theResource)) {
 				R4 r = classR4.cast(theResource);
 				r.getMeta().setLastUpdated(new Date());
@@ -357,50 +383,6 @@ public class ConformancePackageResourceProvider<R4 extends MetadataResource, R4B
 			throw new MethodNotAllowedException(
 				"Updating conformance resources is only allowed in development mode, set matchbox.fhir.context.onlyOneEngine=true in application.yaml");
 		}
-	}
-
-	/**
-	 * Returns the list of installed StructureDefinitions, as a list of R5 CanonicalTypes.
-	 */
-	public List<org.hl7.fhir.r5.model.CanonicalType> getCanonicalsR5() {
-		return new TransactionTemplate(myTxManager).execute(tx -> {
-			final var page = PageRequest.of(0, 2147483646);
-
-			// Find the IDs of the current StructureDefinitions.
-			final var currentEntityIds =
-				this.myPackageVersionResourceDao.findCurrentByResourceType(page, this.resourceType)
-					.stream()
-					.map(NpmPackageVersionResourceEntity::getId)
-					.collect(Collectors.toUnmodifiableSet());
-
-			return this.myPackageVersionResourceDao.findByResourceType(page, this.resourceType)
-				.stream()
-				.peek(entity -> {
-					// NB: getCanonicalVersion() may be null is rare cases, but getPackageVersion().getVersionId() should not
-					if (entity.getCanonicalVersion() == null) {
-						entity.setCanonicalVersion(entity.getPackageVersion().getVersionId());
-					}
-				})
-				// Sort the StructureDefinitions by canonical URL first, and then by version
-				.sorted(Comparator
-							  .comparing(NpmPackageVersionResourceEntity::getCanonicalUrl)
-							  .thenComparing(NpmPackageVersionResourceEntity::getCanonicalVersion))
-				.map(entity -> {
-					final var canonical = new CanonicalType(entity.getCanonicalUrl());
-					// Add custom extensions to the CanonicalType to store additional information
-					addExtension(canonical, "ig-id", new StringType(entity.getPackageVersion().getPackageId()));
-					addExtension(canonical, "ig-version", new StringType(entity.getCanonicalVersion()));
-					addExtension(canonical, "ig-current", new BooleanType(currentEntityIds.contains(entity.getId())));
-					addExtension(canonical, "sd-canonical", new StringType(entity.getCanonicalUrl()));
-					if (entity.getFilename() != null && !entity.getFilename().isBlank()) {
-						addExtension(canonical, "sd-title", new StringType(entity.getFilename()));
-					} else {
-						addExtension(canonical, "sd-title", new StringType(entity.getCanonicalUrl()));
-					}
-					return canonical;
-				})
-				.toList();
-		});
 	}
 
 	public String getFhirVersion(IBaseResource theResource) {
@@ -466,12 +448,10 @@ public class ConformancePackageResourceProvider<R4 extends MetadataResource, R4B
 
 	@Override
 	public Class<? extends IBaseResource> getResourceType() {
-		return switch (this.myCtx.getVersion().getVersion()) {
-			case R4 -> this.classR4;
-			case R4B -> this.classR4B;
-			case R5 -> this.classR5;
-			default -> throw new MatchboxUnsupportedFhirVersionException("ConformancePackageResourceProvider",
-																							 this.myCtx.getVersion().getVersion());
-		};
+		return this.matchboxFhirVersion.resourceType(
+				this.classR4,
+				this.classR4B,
+				this.classR5
+		);
 	}
 }

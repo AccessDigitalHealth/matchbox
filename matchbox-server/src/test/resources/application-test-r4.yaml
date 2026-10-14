@@ -11,17 +11,14 @@ hapi:
         url: classpath:/hl7.fhir.r4.core.tgz
       matchbox_health_test_ig_r4:
         name: matchbox.health.test.ig.r4
-        version: 0.2.0
-        url: classpath:/matchbox.health.test.ig.r4-0.2.0.tgz
-      xver:
-        name: hl7.fhir.uv.xver
-        version: 0.1.0
-        url: classpath:/hl7.fhir.uv.xver#0.1.0@mb.tgz
+        version: 0.3.0
+        url: classpath:/matchbox.health.test.ig.r4-0.3.0.tgz
 matchbox:
   fhir:
     context:
       httpReadOnly: true
       txServer: http://localhost:${server.port}/matchboxv3/tx
+      ssrfProtectionEnabled: false # Needed for the localhost TX URL
       suppressWarnInfo:
         hl7.fhir.r4.core#4.0.1:
           - "Constraint failed: dom-6:"
@@ -29,12 +26,11 @@ matchbox:
       suppressError:
         hl7.fhir.r4.core#4.0.1:
           - "Extension_EXTP_Context_Wrong@^RelatedPerson"
-        matchbox.health.test.ig.r4#0.2.0:
+        matchbox.health.test.ig.r4#0.3.0:
           - "Type_Specific_Checks_DT_URL_Resolve@^.*extension.*url"
           - "Type_Specific_Checks_DT_URL_Resolve@^.*coding.*system"
           - "Extension_EXT_Unknown"
           - "Extension_EXT_Unknown_NotHere"
-      xVersion: true
 spring:
   datasource:
     url: "jdbc:h2:mem:test-r4"

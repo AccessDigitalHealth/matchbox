@@ -4,23 +4,34 @@ import static org.apache.commons.lang3.StringUtils.defaultString;
 import static org.apache.commons.lang3.StringUtils.isBlank;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+import ca.uhn.fhir.batch2.jobs.installpackage.model.PackageInstallationJobParameters;
+import ca.uhn.fhir.batch2.model.JobInstanceStartRequest;
+import ca.uhn.fhir.jpa.batch.models.Batch2JobStartResponse;
 import ca.uhn.fhir.jpa.binary.api.IBinaryStorageSvc;
 import ca.uhn.fhir.jpa.dao.data.INpmPackageVersionResourceDao;
+import ca.uhn.fhir.jpa.dao.tx.IHapiTransactionService;
 import ca.uhn.fhir.jpa.model.entity.NpmPackageVersionResourceEntity;
+import ca.uhn.fhir.jpa.packages.*;
+import ca.uhn.fhir.rest.api.server.RequestDetails;
+import ca.uhn.fhir.util.Batch2JobDefinitionConstants;
 import jakarta.annotation.PostConstruct;
 
+import org.hl7.fhir.exceptions.FHIRException;
 import org.hl7.fhir.instance.model.api.*;
 import org.hl7.fhir.r4.model.Identifier;
 import org.hl7.fhir.utilities.json.model.JsonObject;
+import org.hl7.fhir.utilities.npm.BasePackageCacheManager.InputStreamWithSrc;
 import org.hl7.fhir.utilities.npm.IPackageCacheManager;
 import org.hl7.fhir.utilities.npm.NpmPackage;
 import org.hl7.fhir.utilities.npm.NpmPackage.NpmPackageFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -40,13 +51,6 @@ import ca.uhn.fhir.jpa.dao.data.INpmPackageVersionDao;
 import ca.uhn.fhir.jpa.model.config.PartitionSettings;
 import ca.uhn.fhir.jpa.model.entity.NpmPackageVersionEntity;
 import ca.uhn.fhir.jpa.model.util.JpaConstants;
-import ca.uhn.fhir.jpa.packages.IHapiPackageCacheManager;
-import ca.uhn.fhir.jpa.packages.IPackageInstallerSvc;
-import ca.uhn.fhir.jpa.packages.ImplementationGuideInstallationException;
-import ca.uhn.fhir.jpa.packages.JpaPackageCache;
-import ca.uhn.fhir.jpa.packages.PackageDeleteOutcomeJson;
-import ca.uhn.fhir.jpa.packages.PackageInstallOutcomeJson;
-import ca.uhn.fhir.jpa.packages.PackageInstallationSpec;
 import ca.uhn.fhir.jpa.searchparam.SearchParameterMap;
 import ca.uhn.fhir.rest.api.server.IBundleProvider;
 import ca.uhn.fhir.rest.api.server.SystemRequestDetails;
@@ -56,6 +60,8 @@ import ca.uhn.fhir.rest.param.UriParam;
 import ca.uhn.fhir.rest.server.exceptions.InternalErrorException;
 import ca.uhn.fhir.util.FhirTerser;
 import ca.uhn.fhir.util.SearchParameterUtil;
+import ch.ahdis.matchbox.engine.MatchboxEngine;
+import ch.ahdis.matchbox.events.ImplementationGuideUninstalledEvent;
 
 /**
  * This is a copy of ca.uhn.fhir.jpa.packages.PackageInstallerSvcImpl with the
@@ -83,7 +89,7 @@ public class MatchboxPackageInstallerImpl implements IPackageInstallerSvc {
 	@Autowired
 	private IHapiPackageCacheManager myPackageCacheManager;
 	@Autowired
-	private PlatformTransactionManager myTxManager;
+	private IHapiTransactionService myTxService;
 	@Autowired
 	private INpmPackageVersionDao myPackageVersionDao;
 	@Autowired
@@ -91,7 +97,7 @@ public class MatchboxPackageInstallerImpl implements IPackageInstallerSvc {
 	@Autowired
 	private PartitionSettings myPartitionSettings;
 	@Autowired
-	private IBinaryStorageSvc myBinaryStorageSvc;
+	private ApplicationEventPublisher myApplicationEventPublisher;
 
 	/**
 	 * Constructor
@@ -123,9 +129,9 @@ public class MatchboxPackageInstallerImpl implements IPackageInstallerSvc {
 	public PackageDeleteOutcomeJson uninstall(PackageInstallationSpec theInstallationSpec)
 			throws ImplementationGuideInstallationException {
 		PackageInstallOutcomeJson retVal = new PackageInstallOutcomeJson();
-		boolean exists = new TransactionTemplate(myTxManager).execute(tx -> {
-			Optional<NpmPackageVersionEntity> existing = myPackageVersionDao
-					.findByPackageIdAndVersion(theInstallationSpec.getName(), theInstallationSpec.getVersion());
+		boolean exists = myTxService.withRequest(createRequestDetails()).execute(() -> {
+			Optional<NpmPackageVersionEntity> existing = myPackageVersionDao.findByPackageIdAndVersion(
+				theInstallationSpec.getName(), theInstallationSpec.getVersion());
 			return existing.isPresent();
 		});
 		if (exists) {
@@ -158,10 +164,9 @@ public class MatchboxPackageInstallerImpl implements IPackageInstallerSvc {
 		PackageInstallOutcomeJson retVal = new PackageInstallOutcomeJson();
 		if (enabled) {
 			try {
-
-				boolean exists = new TransactionTemplate(myTxManager).execute(tx -> {
-					Optional<NpmPackageVersionEntity> existing = myPackageVersionDao
-							.findByPackageIdAndVersion(theInstallationSpec.getName(), theInstallationSpec.getVersion());
+				boolean exists = myTxService.withRequest(createRequestDetails()).execute(() -> {
+					Optional<NpmPackageVersionEntity> existing = myPackageVersionDao.findByPackageIdAndVersion(
+						theInstallationSpec.getName(), theInstallationSpec.getVersion());
 					return existing.isPresent();
 				});
 				if (exists) {
@@ -172,6 +177,9 @@ public class MatchboxPackageInstallerImpl implements IPackageInstallerSvc {
 						ourLog.info("Remove Package {}#{} because it is a ci-build package or coming form localhost",
 								theInstallationSpec.getName(), theInstallationSpec.getVersion());
 						myPackageCacheManager.uninstallPackage(theInstallationSpec.getName(), theInstallationSpec.getVersion());
+						// the engines and the shared resources with the replaced content must not be used anymore (#609)
+						myApplicationEventPublisher.publishEvent(new ImplementationGuideUninstalledEvent(this,
+							theInstallationSpec.getName(), theInstallationSpec.getVersion()));
 					} else {
 						// Abort loading, the package is already installed
 						return retVal;
@@ -204,6 +212,21 @@ public class MatchboxPackageInstallerImpl implements IPackageInstallerSvc {
 		return retVal;
 	}
 
+	private boolean skipPackage(String value) {
+		boolean skip = false;
+		switch (value) {
+			case MatchboxEngine.PACKAGE_R4_TERMINOLOGY:
+			case MatchboxEngine.PACKAGE_R5_TERMINOLOGY:
+			case MatchboxEngine.PACKAGE_R4_UV_EXTENSIONS:
+			case MatchboxEngine.PACKAGE_R5_UV_EXTENSIONS:
+			case MatchboxEngine.PACKAGE_UV_XVER:
+			case MatchboxEngine.PACKAGE_UV_XVER54:
+			case MatchboxEngine.PACKAGE_CDA_UV_CORE:
+				skip = true;
+		}
+		return skip;
+	}
+
 	private void fetchAndInstallDependencies(NpmPackage npmPackage, PackageInstallationSpec theInstallationSpec, PackageInstallOutcomeJson theOutcome) throws ImplementationGuideInstallationException {
 		if (npmPackage.getNpm().has("dependencies")) {
 			JsonObject dependencies = npmPackage.getNpm().get("dependencies").asJsonObject();
@@ -213,7 +236,12 @@ public class MatchboxPackageInstallerImpl implements IPackageInstallerSvc {
 				try {
 					theOutcome.getMessage().add("Package " + npmPackage.id() + "#" + npmPackage.version() + " depends on package " + ig + "#" + ver);
 
-					boolean skip = false;
+					if (skipPackage(ig + "#" + ver)) {
+						theOutcome.getMessage().add("Skipping internal dependency " +ig + " (bundled in engine classpath)");
+						continue;
+					}
+
+					boolean skip = skipPackage(ig);
 					for (String next : theInstallationSpec.getDependencyExcludes()) {
 						if (ig.matches(next)) {
 							theOutcome.getMessage().add("Not installing dependency " + ig + " because it matches exclude criteria: " + next);
@@ -236,6 +264,40 @@ public class MatchboxPackageInstallerImpl implements IPackageInstallerSvc {
 						"Cannot resolve dependency %s#%s", ig, ver), e);
 				}
 			}
+		}
+		// Also load internal dependencies declared in the ImplementationGuide resource (see #481)
+		try {
+			for (String s : npmPackage.listResources("ImplementationGuide")) {
+				byte[] content = org.hl7.fhir.utilities.FileUtilities.streamToBytes(npmPackage.load("package", s));
+				JsonObject igJson = org.hl7.fhir.utilities.json.parser.JsonParser.parseObject(content);
+				JsonObject definition = igJson.getJsonObject("definition");
+				if (definition != null && definition.has("extension")) {
+					for (JsonObject ext : definition.getJsonObjects("extension")) {
+						String url = ext.asString("url");
+						if ("http://hl7.org/fhir/tools/StructureDefinition/ig-internal-dependency".equals(url)) {
+							String value = ext.asString("valueCode");
+							if (value != null && value.contains("#") && !value.startsWith("hl7.fhir.uv.tools")) {
+								String depId = value.substring(0, value.indexOf("#"));
+								String depVer = value.substring(value.indexOf("#") + 1);
+								theOutcome.getMessage().add("Package " + npmPackage.id() + "#" + npmPackage.version() + " has internal dependency " + depId + "#" + depVer);
+								// Skip packages that are already loaded from classpath by the engine
+								if (skipPackage(value)) {
+									theOutcome.getMessage().add("Skipping internal dependency " + depId + "#" + depVer + " (bundled in engine classpath)");
+									continue;
+								}
+								try {
+									NpmPackage dependency = myPackageCacheManager.loadPackage(depId, depVer);
+									fetchAndInstallDependencies(dependency, theInstallationSpec, theOutcome);
+								} catch (IOException e) {
+									ourLog.warn("Failed to load internal dependency {}#{} for {}: {}", depId, depVer, npmPackage.id(), e.getMessage());
+								}
+							}
+						}
+					}
+				}
+			}
+		} catch (IOException e) {
+			ourLog.warn("Failed to read ImplementationGuide resources from package {}: {}", npmPackage.id(), e.getMessage());
 		}
 	}
 
@@ -300,7 +362,7 @@ public class MatchboxPackageInstallerImpl implements IPackageInstallerSvc {
 		if (validForUpload(theResource)) {
 			if (searchResult.isEmpty()) {
 
-				ourLog.debug("Creating new resource matching {}", map.toNormalizedQueryString(myFhirContext));
+				ourLog.debug("Creating new resource matching {}", map.toNormalizedQueryString());
 				theOutcome.incrementResourcesInstalled(myFhirContext.getResourceType(theResource));
 
 				IIdType id = theResource.getIdElement();
@@ -314,10 +376,10 @@ public class MatchboxPackageInstallerImpl implements IPackageInstallerSvc {
 						id.setParts(id.getBaseUrl(), id.getResourceType(), newIdPart, id.getVersionIdPart());
 					}
 					updateResource(dao, theResource);
-					ourLog.info("Created resource with existing id " + id.toString());
+					ourLog.info("Created resource with existing id " + id);
 				}
 			} else {
-				ourLog.debug("Updating existing resource matching {}", map.toNormalizedQueryString(myFhirContext));
+				ourLog.debug("Updating existing resource matching {}", map.toNormalizedQueryString());
 				theResource.setId(searchResult.getResources(0, 1).get(0).getIdElement().toUnqualifiedVersionless());
 				DaoMethodOutcome outcome = updateResource(dao, theResource);
 				if (!outcome.isNop()) {
@@ -482,4 +544,42 @@ public class MatchboxPackageInstallerImpl implements IPackageInstallerSvc {
 		myFhirContext = theCtx;
 	}
 
+	@VisibleForTesting
+	RequestDetails createRequestDetails() {
+		SystemRequestDetails requestDetails = new SystemRequestDetails();
+		if (myPartitionSettings.isPartitioningEnabled()) {
+			requestDetails.setRequestPartitionId(myPartitionSettings.getDefaultRequestPartitionId());
+		}
+		return requestDetails;
+	}
+
+	/**
+	 * Starts an asynchronous batch job to install a package asynchronously as a background process
+	 * @param theInstallationSpec the specification defining the package to install
+	 * @return the instance id of the job, needed for polling for updates
+	 */
+	@Override
+	public String installAsynchronously(PackageInstallationSpec theInstallationSpec) {
+		throw new UnsupportedOperationException("Asynchronous package installation is not supported in this implementation");
+	}
+
+	@Override
+	public PackageInstallationStatusJson checkInstallationStatus(final String theJobId) {
+		throw new UnsupportedOperationException("Installation status is not supported in this implementation");
+	}
+
+	@Override
+	public NpmPackage substituteVersionSpecificPackageIfNeeded(final NpmPackage theDependency,
+	                                                           final String theId,
+	                                                           final String theVersion,
+																				  final boolean theShouldUpdateCache) {
+		throw new UnsupportedOperationException("Package substitution is not supported in this implementation");
+	}
+
+	@Override
+	public void installPackage(final NpmPackage npmPackage,
+	                           final PackageInstallationSpec theInstallationSpec,
+	                           final PackageInstallOutcomeJson theOutcome) {
+		throw new UnsupportedOperationException("Package installation is not supported in this implementation");
+	}
 }

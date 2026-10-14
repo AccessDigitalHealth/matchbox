@@ -1,4 +1,7 @@
 import {Ace} from "ace-builds";
+import "ace-builds/src-noconflict/mode-json";
+import "ace-builds/src-noconflict/mode-xml";
+import "ace-builds/src-noconflict/theme-textmate";
 import {Issue, IssueSeverity} from "../util/operation-result";
 import {ValidationEntry} from "./validation-entry";
 import {CodeEditorContent} from "./validate.component";
@@ -50,12 +53,12 @@ export class ValidationCodeEditor {
             break;
         }
         return {
-          row: issue.line - 1,
+          row: issue.line ? issue.line - 1 : 0,
           column: issue.col,
           text: issue.text,
           type,
         };
-      });
+      }) as Ace.Annotation[];
     this.editor.session.setAnnotations(annotations);
   }
 
@@ -96,10 +99,10 @@ export class ValidationCodeEditor {
     }
 
     if (editorContent == CodeEditorContent.RESOURCE_CONTENT) {
-      this.editor.setValue(selectedEntry.resource, -1);
-      if (selectedEntry.mimetype === 'application/fhir+json') {
+      this.editor.setValue(selectedEntry.content, -1);
+      if (selectedEntry.mediaType === 'application/fhir+json') {
         this.editor.getSession().setMode('ace/mode/json');
-      } else if (selectedEntry.mimetype === 'application/fhir+xml') {
+      } else if (selectedEntry.mediaType === 'application/fhir+xml') {
         this.editor.getSession().setMode('ace/mode/xml');
       }
       this.updateEditorIssues(selectedEntry);

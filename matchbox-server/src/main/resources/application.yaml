@@ -35,12 +35,14 @@ spring:
         enabled: false
         name: matchbox-mcp
         version: ${project.version}
+        protocol: STREAMABLE
         # These 3 paths have been carefully crafted, change them at your own risk!
         base-url: ../
         sse-endpoint: mcp/sse
         sse-message-endpoint: mcp/message
         stdio: false
         type: SYNC
+        request-timeout: 60s
         tool-change-notification: true
         resource-change-notification: false
         prompt-change-notification: false
@@ -52,7 +54,15 @@ spring:
 server:
   servlet:
     context-path: /matchboxv3
+  undertow:
+    # Undertow rejects request bodies larger than 2 MiB by default (UndertowOptions.MAX_ENTITY_SIZE),
+    # which is too small for FHIR resources such as documents or large bundles. Override with the
+    # environment variable SERVER_UNDERTOW_MAX_HTTP_POST_SIZE if needed; the value must be positive,
+    # Undertow cannot be configured for unlimited request bodies through Spring Boot.
+    max-http-post-size: 100MB
 management:
+  tracing:
+    enabled: false
   endpoint:
     health:
       probes:
@@ -86,9 +96,9 @@ matchbox:
   fhir:
     context:
       txServer: n/a
-#      xVersion: true
 #      onlyOneEngine: true
 #      igsPreloaded: ch.fhir.ig.ch-core#4.0.0-ballot
+      ssrfProtectionEnabled: true
       suppressWarnInfo:
         hl7.fhir.r4.core#4.0.1:
           #- "Constraint failed: dom-6:"
@@ -100,3 +110,6 @@ logging:
     ca.uhn.fhir.jpa.packages.JpaPackageCache: ERROR
     fhirtest.access: ERROR
     fhirtest.request: ERROR
+otel:
+  sdk:
+    disabled: true

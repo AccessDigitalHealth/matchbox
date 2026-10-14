@@ -18,7 +18,7 @@
       (dragleave)="onDragLeave()"
       class="bold-text"
     >
-      Drop file here
+      Drop a file here
     </div>
     <div class="spacer">or</div>
     <button
@@ -27,8 +27,13 @@
       mat-raised-button
       type="button"
     >
-      Add file
+      Select a file
     </button>
   </div>
+  @if (selectedFile) {
+    <div class="file-name">
+      Selected file: {{ selectedFile.name }}
+    </div>
+  }
 </div>
 <input #fileInput (input)="onDrop($event)" hidden type="file"/>

@@ -13,25 +13,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the project
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         # https://github.com/actions/setup-java#usage
         with:
           java-version: 21
-          distribution: adopt
+          distribution: temurin
           cache: maven
 
       - name: Run the tests in Maven
-        timeout-minutes: 15
+        timeout-minutes: 40
         # We need a timeout here
         env:
-          MAVEN_OPTS: -Xmx12g
+          # This only sizes the Maven process itself; the tests run in forked JVMs that get their heap from the
+          # surefire argLine in the module POMs. Maven needs little, and leaving it uncapped means it can balloon
+          # into the memory those forks need.
+          MAVEN_OPTS: -XX:MaxRAMPercentage=25.0
         run: mvn --batch-mode --no-transfer-progress --update-snapshots verify
-    
-      - uses: actions/upload-artifact@v4
-        if: failure() 
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
         with:
           name: testresults
           path: |

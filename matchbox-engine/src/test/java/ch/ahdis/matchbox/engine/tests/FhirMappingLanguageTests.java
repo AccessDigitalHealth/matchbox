@@ -21,6 +21,7 @@ package ch.ahdis.matchbox.engine.tests;
  */
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -40,6 +41,7 @@ import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Questionnaire;
 import org.hl7.fhir.r4.model.Resource;
 import org.hl7.fhir.r4.model.StructureMap;
+import org.hl7.fhir.r5.context.IWorkerContext;
 import org.hl7.fhir.r5.formats.JsonParser;
 import org.hl7.fhir.r5.model.Composition;
 import org.junit.jupiter.api.AfterAll;
@@ -84,6 +86,20 @@ class FhirMappingLanguageTests {
 	void testQr2Patient() throws FHIRException, IOException {
 		MatchboxEngine engine = new MatchboxEngine(FhirMappingLanguageTests.engine);
 		StructureMap sm = engine.parseMap(getFileAsStringFromResources("/qr2patgender.map"));
+		assertTrue(sm != null);
+		engine.addCanonicalResource(sm);
+		Resource res = engine.transformToFhir(getFileAsStringFromResources("/qr.json"), true,
+				"http://ahdis.ch/matchbox/fml/qr2patgender");
+		assertTrue(res != null);
+		assertEquals("Patient", res.getResourceType().name());
+		Patient patient = (Patient) res;
+		assertEquals("FEMALE", patient.getGender().name());
+	}
+
+	@Test
+	void testPinnedCanonical() throws FHIRException, IOException {
+		MatchboxEngine engine = new MatchboxEngine(FhirMappingLanguageTests.engine);
+		StructureMap sm = engine.parseMap(getFileAsStringFromResources("/qr2patgender_pin.map"));
 		assertTrue(sm != null);
 		engine.addCanonicalResource(sm);
 		Resource res = engine.transformToFhir(getFileAsStringFromResources("/qr.json"), true,
@@ -143,7 +159,7 @@ class FhirMappingLanguageTests {
 		assertTrue(sm != null);
 		engine.addCanonicalResource(sm);
 		assertTrue(engine.getCanonicalResource(sm.getUrl(), "4.0.1") != null);
-		assertTrue(engine.getContext().fetchResource(org.hl7.fhir.r5.model.StructureMap.class, sm.getUrl()) != null);
+		assertTrue(engine.getContext().fetchResource(org.hl7.fhir.r5.model.StructureMap.class, sm.getUrl(), IWorkerContext.VersionResolutionRules.defaultRule()) != null);
 
 		String qr = getFileAsStringFromResources("/questionnairepatient.xml");
 
@@ -153,7 +169,7 @@ class FhirMappingLanguageTests {
 		engine.addCanonicalResource(questionnaire);
 		assertTrue(engine.getCanonicalResource(questionnaire.getUrl(), "4.0.1") != null);
 		assertTrue(engine.getContext().fetchResource(org.hl7.fhir.r5.model.Questionnaire.class,
-				questionnaire.getUrl()) != null);
+				questionnaire.getUrl(), IWorkerContext.VersionResolutionRules.defaultRule()) != null);
 		assertTrue(engine.getCanonicalResourceById("Questionnaire", questionnaire.getId()) != null);
 	}
 
@@ -223,6 +239,27 @@ class FhirMappingLanguageTests {
 				eob.getType().getCodingFirstRep().getSystem());
 		assertEquals("notification", eob.getType().getCodingFirstRep().getCode());
 	}
+
+	@Test
+	void testTranslateCoding() throws FHIRException, IOException {
+		MatchboxEngine engine = new MatchboxEngine(FhirMappingLanguageTests.engine);
+		StructureMap sm = engine.parseMap(getFileAsStringFromResources("/translatecoding.map"));
+		assertTrue(sm != null);
+		engine.addCanonicalResource(sm);
+		Resource res = engine.transformToFhir(getFileAsStringFromResources("/qr.json"), true,
+				"http://ahdis.ch/matchbox/fml/translatecoding");
+		assertTrue(res != null);
+		assertEquals("ExplanationOfBenefit", res.getResourceType().name());
+		ExplanationOfBenefit eob = (ExplanationOfBenefit) res;
+		assertEquals("http://snomed.info/sct",
+				eob.getItemFirstRep().getLocationCodeableConcept().getCodingFirstRep().getSystem());
+		assertEquals("112283007",
+				eob.getItemFirstRep().getLocationCodeableConcept().getCodingFirstRep().getCode());
+		assertEquals("http://snomed.info/sct",
+		 		eob.getType().getCodingFirstRep().getSystem());
+		assertEquals("112283007", eob.getType().getCodingFirstRep().getCode());
+	}
+
 
 	@Test
 	void testCast() throws FHIRException, IOException {
@@ -1328,5 +1365,25 @@ class FhirMappingLanguageTests {
 		}
 	}
 
+	// https://github.com/hapifhir/org.hl7.fhir.core/issues/2541 - copy() must not alias the source element
+	@Test
+	void testCopyDoesNotAliasSource() throws FHIRException, IOException {
+		MatchboxEngine engine = new MatchboxEngine(FhirMappingLanguageTests.engine);
+		StructureMap sm = engine.parseMap(getFileAsStringFromResources("/copyaliasingbug.map"));
+		assertTrue(sm != null);
+		engine.addCanonicalResource(sm);
+		Resource res = engine.transformToFhir(getFileAsStringFromResources("/copyaliasingbug-source.json"), true,
+				"http://ahdis.ch/matchbox/fml/copyaliasingbug");
+		assertTrue(res != null);
+		assertEquals("Bundle", res.getResourceType().name());
+		Bundle bundle = (Bundle) res;
+		assertEquals(2, bundle.getEntry().size());
+
+		Patient plainCopy = (Patient) bundle.getEntry().get(0).getResource();
+		Patient mutatedCopy = (Patient) bundle.getEntry().get(1).getResource();
+
+		assertFalse(plainCopy.getActive(), "the untouched copy must keep the source's original 'active: false'");
+		assertTrue(mutatedCopy.getActive(), "the mutated copy must have 'active: true'");
+	}
 
 }

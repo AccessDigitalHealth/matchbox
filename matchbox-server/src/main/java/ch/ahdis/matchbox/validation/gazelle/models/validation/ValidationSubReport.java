@@ -1,6 +1,6 @@
 package ch.ahdis.matchbox.validation.gazelle.models.validation;
 
-import ch.ahdis.matchbox.validation.gazelle.utils.BidMap;
+import ch.ahdis.matchbox.validation.gazelle.utils.BidiMap;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.util.ArrayList;
@@ -20,10 +20,10 @@ public class ValidationSubReport {
 	private List<AssertionReport> assertionReports;
 	private ValidationCounters subCounters = new ValidationCounters();
 	private List<UnexpectedError> unexpectedErrors;
-	private static final BidMap<ValidationTestResult, Integer> validationTestResultWeights = BidMap.of(
-            new BidMap.Entry(ValidationTestResult.PASSED, 0),
-				new BidMap.Entry(ValidationTestResult.FAILED, 1),
-				new BidMap.Entry(ValidationTestResult.UNDEFINED, 2));
+	private static final BidiMap<ValidationTestResult, Integer> validationTestResultWeights = BidiMap.of(
+            new BidiMap.Entry(ValidationTestResult.PASSED, 0),
+				new BidiMap.Entry(ValidationTestResult.FAILED, 1),
+				new BidiMap.Entry(ValidationTestResult.UNDEFINED, 2));
 
 	public ValidationSubReport() {
 	}
@@ -184,6 +184,13 @@ public class ValidationSubReport {
 			.orElse(assertionsResult)
 			: assertionsResult;
 		this.subReportResult = this.getHeaviestResult(assertionsResult, subReportsResult);
+
+		// An unexpected error means that the validation could not be performed: neither PASSED nor FAILED is true, so
+		// the result is UNDEFINED (which is also the heaviest weight).
+		// https://github.com/ahdis/matchbox/issues/590
+		if (this.unexpectedErrors != null && !this.unexpectedErrors.isEmpty()) {
+			this.subReportResult = ValidationTestResult.UNDEFINED;
+		}
 	}
 
 	static int keepHeaviestResult(ValidationTestResult result1, ValidationTestResult result2) {
@@ -202,7 +209,15 @@ public class ValidationSubReport {
 
 	public void computeCountersSubReport() {
 		this.computeCountersFromAssertionReports();
+		this.computeCountersFromUnexpectedErrors();
 		this.computeCountersFromSubReports();
+	}
+
+	private void computeCountersFromUnexpectedErrors() {
+		if (this.unexpectedErrors != null) {
+			this.getSubCounters().setNumberOfUnexpectedErrors(
+				this.getSubCounters().getNumberOfUnexpectedErrors() + this.unexpectedErrors.size());
+		}
 	}
 
 	private void computeCountersFromAssertionReports() {

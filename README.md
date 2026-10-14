@@ -9,11 +9,13 @@
 
 the server can be run in two configurations, development (allowing updating resources, set flag in application.yaml in matchbox.fhir.context.onlyOneEngine to true) or deployment (default), see also additional [documentation](https://ahdis.github.io/matchbox)
 
-a public development server is hosted at [https://test.ahdis.ch/matchbox/fhir](https://test.ahdis.ch/matchbox/fhir) with a corresponding gui [https://test.ahdis.ch/matchbox/](https://test.ahdis.ch/matchbox/#)
+A public development server is hosted at [https://test.ahdis.ch/matchbox/fhir](https://test.ahdis.ch/matchbox/fhir) 
+with a corresponding GUI at [https://test.ahdis.ch/matchbox/](https://test.ahdis.ch/matchbox/).
 
-a public test server is hosted at [https://test.ahdis.ch/matchboxv3/fhir](https://test.ahdis.ch/matchboxv3/fhir) with a corresponding gui [https://test.ahdis.ch/matchboxv3/](https://test.ahdis.ch/matchboxv3/#)
+A public test server is hosted at [https://test.ahdis.ch/matchboxv3/fhir](https://test.ahdis.ch/matchboxv3/fhir) 
+with a corresponding GUI at [https://test.ahdis.ch/matchboxv3/](https://test.ahdis.ch/matchboxv3/).
 
-## containers
+## Containers
 
 The docker file will create a docker image with no preloaded implementation guides. A list of implementation guides to load can be passed as config-map.
 
@@ -29,9 +31,12 @@ The easiest way to run this server entirely depends on your environment requirem
 
 ## using prebuilt image
 
+```bash
+docker run -d --name matchbox -p 8080:8080 -v /Users/oegger/Documents/github/matchbox/matchbox-server/with-settings:/config europe-west6-docker.pkg.dev/ahdis-ch/ahdis/matchbox:latest
 ```
-docker run -d --name matchbox -p 8080:8080  europe-west6-docker.pkg.dev/ahdis-ch/ahdis/matchbox:v3.9.10 -v /Users/oegger/Documents/github/matchbox/matchbox-server/with-settings:/config matchbox
-```
+
+Docker options (`-v`, `-e`, ...) go before the image name: arguments after it are passed to Matchbox as Spring Boot
+arguments (e.g. `--matchbox.fhir.context.onlyOneEngine=true`).
 
 note replace /Users/oegger/Documents/github/matchbox/matchbox-server/with-settings with the folder where you have your application.yaml (and since v3.9.10) your [fhir-settings.json](https://confluence.hl7.org/display/FHIR/Using+fhir-settings.json).
 
@@ -51,11 +56,11 @@ mvn clean install -DskipTests spring-boot:run -Dspring-boot.run.arguments=--spri
 
 or
 
-```
+```bash
 java -Dspring.config.additional-location=file:with-preload/application.yaml -jar target/matchbox.jar
 ```
 
-```
+```bash
 mvn clean install -DskipTests spring-boot:run -Dspring-boot.run.jvmArguments="-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=5005"
 ```
 
@@ -66,7 +71,7 @@ or
 [http://localhost:8080/matchbox/#/](http://localhost:8080/matchboxv3/#/)
 
 
-## building with Docker
+## Building with Docker
 
 ### Configurable base image:
 
@@ -79,6 +84,29 @@ docker run -d --name matchbox -p 8080:8080 -v /Users/oegger/Documents/github/mat
 
 Server will then be accessible at http://localhost:8080/matchboxv3/fhir/metadata.
 
+The Docker image includes a HEALTHCHECK that pings `http://localhost:8080/matchboxv3/actuator/health` by default. If you change the context path, set the `HEALTHCHECK_URL` environment variable accordingly:
+
+```bash
+docker run -d --name matchbox -p 8080:8080 -e HEALTHCHECK_URL=http://localhost:8080/mycontext/actuator/health matchbox
+```
+
+Note: In Kubernetes environments, Docker HEALTHCHECK is ignored — use `livenessProbe`/`readinessProbe` in your pod spec instead.
+
+The JVM options are set with the `JDK_JAVA_OPTIONS` environment variable, which defaults to
+`-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication`: the heap is 70% of the memory
+limit of the container, the container exits on an `OutOfMemoryError` and can be restarted, and identical strings of the
+loaded packages share their memory. Set a memory limit for the container; 4 GB is enough for a typical setup of
+implementation guides:
+
+```bash
+docker run -d --name matchbox -p 8080:8080 -m 4g matchbox
+```
+
+Setting `JDK_JAVA_OPTIONS` replaces the default, so include a heap setting, `-XX:+ExitOnOutOfMemoryError` and
+`-XX:+UseStringDeduplication`.
+
+See [Running Matchbox in docker](https://ahdis.github.io/matchbox/docker/#jvm-options) for details.
+
 To dynamically configure run in a kubernetes environment and add a kubernetes config map that provides /config/application.yaml file with implementation guide list like in "with-preload/application.yaml"
 
 ## Using docker-compose with a persistent postgreSQL database
@@ -89,13 +117,13 @@ Change to either with-posgres directory or the with-preload directory (contains 
 
 For the first time, you might need to do
 
-```
+```bash
 docker-compose up matchbox-db
 ```
 
-that the database gets initialized before matchbox is starting up (needs a fix)
+that the database gets initialized before Matchbox is starting up (needs a fix)
 
-```
+```bash
 mkdir data
 mvn clean package -DskipTests
 docker build -t matchbox .
@@ -107,57 +135,48 @@ Matchbox-gui will be available at [http://localhost:8080/matchboxv3/#/](http://l
 
 Export the DB data:
 
-```
+```bash
 docker-compose exec -T matchbox-test-db pg_dump -Fc -U matchbox matchbox > mydump
 ```
 
 Reimport the DB data:
 
-```
+```bash
 docker-compose exec -T matchbox-test-db pg_restore -c -U matchbox -d matchbox < mydump
 ```
 
-### making container available
+### Making container available
 
-```
+```bash
 docker tag matchbox eu.gcr.io/fhir-ch/matchbox:4.0.12
-
 docker push eu.gcr.io/fhir-ch/matchbox:v4.0.12
 ```
 
 ### publish docs
 
-documentation is maintained in docs folder using [mkdocs-material](https://squidfunk.github.io/mkdocs-material/):
+The documentation is maintained in the `docs/` folder using [mkdocs-material](https://squidfunk.github.io/mkdocs-material/):
 
-- develop docs: mkdocs serve
-- publish docs: mkdocs gh-deploy --force
+- develop docs: `mkdocs serve`
+- publish docs: `mkdocs gh-deploy --force`
 
-docs are then available at https://ahdis.github.io/matchbox/
+Docs are then available at https://ahdis.github.io/matchbox/
 
 # Kubernetes
 
+```bash
 kubectl cp matchbox-test-0:fhir.logdir_IS_UNDEFINED ./fhir.logdir/
 
 kubectl cp matchbox-test-app-d684cf865 ./fhir.logdir/
+```
 
 # MVN run unit tests
 
+```bash
 mvn -Dtest=CapabilityStatementTests test
+```
 
 # Making a release
 
-1. Create a pull request that updates the version in the different files (pom.xml files, package.json, the docker pull
-   command in documentation, the changelog, etc.).
-2. Merge the pull request if all tests have succeeded.
-3. Wait for the [Angular workflow](https://github.com/ahdis/matchbox/blob/main/.github/workflows/angular_build.yml)
-   to complete. Since the package.json was modified, the Angular project is rebuilt, unless you also have built the 
-   Angular project in your commit ; in that case, the Angular workflow won't commit anything.
-4. Create a [release](https://github.com/ahdis/matchbox/releases) with the changelog (e.g. "matchbox v3.4.1") and a
-   [tag](https://github.com/ahdis/matchbox/tags) (e.g. `v.3.4.1`) in GitHub.
-5. It will trigger two workflows:
-   1. The [Docker workflow](https://github.com/ahdis/matchbox/blob/main/.github/workflows/googleregistry.yml), that
-      builds a Docker container around `matchbox-server` and publishes it to the Google Artifact registry.
-   2. The [Maven workflow](https://github.com/ahdis/matchbox/blob/main/.github/workflows/central_repository.yml), that
-      builds the `matchbox-engine` JAR and publishes it to the Maven Central Repository. The version used is the one
-      specified in the POM.
-
+The release procedure (version bump PR, release workflow, Docker and Maven Central publishing) is described in the
+Claude Code skill [`.claude/skills/release/SKILL.md`](.claude/skills/release/SKILL.md); ask Claude Code to make a
+release, or follow the steps by hand.

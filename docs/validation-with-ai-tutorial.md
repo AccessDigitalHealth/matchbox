@@ -1,30 +1,29 @@
 # Tutorial: Validation with AI
 
 ## Introduction
-This tutorial shows how matchbox’s AI supported FHIR-Resource Validation can be used.
+This tutorial shows how Matchbox’s AI supported FHIR-Resource Validation can be used.
 
 Combining FHIR validation with AI technologies is an opportunity to make the process more efficient and more accessible for non-specialists. Validation results for complex resources can be overwhelming to understand, therefore having AI analyze the outcome messages can be an efficient way of finding and understanding mistakes in the implementation of the resource and getting recommendations on how to fix it. 
 
 Matchbox offers two methods of validating with support by AI technologies. 
 
-## Analyze Outcomes with AI in matchbox
+## Analyze Outcomes with AI in Matchbox
 
 ### Getting Started
 
-To use AI analysis in matchbox the following parameters must be set when setting up the matchbox-server application properties: 
+To use AI analysis in Matchbox the following parameters must be set when setting up the matchbox-server application properties: 
 
-|   |   |
-|---|---|
-|`matchbox.fhir.context.llm.provider`| The LLM provider used for the AI analysis of validation. |
-| `matchbox.fhir.context.llm.modelName` | The LLM model used for the AI analysis of validation. |
-| `matchbox.fhir.context.llm.apiKey` | Your API key for the desired LLM provider. |
+|                                       |                                                          |
+|---------------------------------------|----------------------------------------------------------|
+| `matchbox.fhir.context.llm.provider`  | The LLM provider used for the AI analysis of validation. |
+| `matchbox.fhir.context.llm.modelName` | The LLM model used for the AI analysis of validation.    |
+| `matchbox.fhir.context.llm.apiKey`    | Your API key for the desired LLM provider.               |
 
 In addition to these parameters, the default behavior for the analysis can be decided by setting one of these parameters:
 
-|   |   |
-|---|---|
-|`matchbox.fhir.context.analyzeOutcomeWithAI`| Whether the validation outcome should be analyzed by a LLM or not. Requires the LLM parameters to be correctly set. |
-| `matchbox.fhir.context.analyzeOutcomeWithAIOnError` | Whether the validation outcome should be analyzed by a LLM, when it includes error or fatal issues, or not. Requires the LLM parameters to be correctly set. |
+|                                                 |                                                                             |
+|-------------------------------------------------|-----------------------------------------------------------------------------|
+| `matchbox.fhir.validation.analyzeErrorsWithLlm` | Whether the outcome should be analyzed by a LLM when the validation failed. |
 
 These parameters can be overridden at runtime during specific validations to adjust the behavior for specific use cases.
 Example configuration (API-Key must be replaced):
@@ -33,22 +32,21 @@ Example configuration (API-Key must be replaced):
 matchbox:
   fhir:
     context:
-      xVersion: true
       onlyOneEngine: true
       txServer: http://tx.fhir.org
-      analyzeOutcomeWithAIOnError: true
       llm:
         provider: openai
         modelName: gpt-4o-mini
         apiKey: sk-xxx
-
+    validation:
+      analyzeErrorsWithLlm: true
 ```
 
-### Validating Resources in matchbox
+### Validating Resources in Matchbox
 
-Having set up the matchbox server in this way resources can be validated as usual in matchbox ([see Tutorial: validation](validation-tutorial.md)). The validation results will now additionally include an analysis by the LLM.
+Having set up the Matchbox server in this way resources can be validated as usual in Matchbox ([see Tutorial: validation](validation-tutorial.md)). The validation results will now additionally include an analysis by the LLM.
 
-In the matchbox UI it will be displayed as the top message returned by the validation:
+In the Matchbox UI it will be displayed as the top message returned by the validation:
 ![AI Analysis of the Operation Outcome](assets/ai_analyze.png)
 
 When using the APIs $validate operation the AI analysis will appear as an additional item in the issues list. The text is returned in markdown format for clearer readability when interpreting it. 
@@ -73,11 +71,30 @@ Example:
 
 ## Using an MCP-Client to perform validations
 
-Matchbox provides an MCP-Server, that can be interpreted by MCP-Client Applications, such as Claude Desktop or VS Codes Github Copilot integration. This allows these applications to use the validation tool from matchbox and provide the user with clear information about the resource and interactive troubleshooting.
+Matchbox provides an MCP-Server, that can be interpreted by MCP-Client Applications, such as Claude Desktop or VS Codes Github Copilot integration. This allows these applications to use the validation tool from Matchbox and provide the user with clear information about the resource and interactive troubleshooting.
+
+### AI Analysis via MCP
+
+When validating resources via MCP, the analysis of the validation is **not** performed by the LLM configured in Matchbox. Instead, Matchbox delegates the analysis back to the LLM of the initiating MCP client.
+
+Depending on if the MCP client supports [Sampling](https://modelcontextprotocol.io/specification/2025-11-25/client/sampling), Matchbox uses two methods:
+- With Sampling: Matchbox requests the AI analysis from the client LLM via an MCP sampling request during the tool call.
+- Without Sampling: Matchbox returns the analysis prompt together with the validations Operation Outcome as part of the tool response. 
+
+#### Activation
+
+The AI analysis for MCP validation requests is only executed if:
+- The validation parameter `analyzeErrorsWithLlm=true` is provided
+OR
+- The property `matchbox.fhir.validation.analyzeErrorsWithLlm` is set to `true` in the `application.yaml` (and not 
+  overwritten by the validation parameter).
+
+In any case, the validation parameter `analyzeErrorsWithLlm` will get set to `false` before the validation in order to
+skip the analysis by the LLM configured in Matchbox. The Sampling or Prompt Injection analysis will still be performed.
 
 ### Getting Started
 
-To enable MCP capabilities for matchbox add the following configuration to the application.yaml:
+To enable MCP capabilities for Matchbox add the following configuration to the application.yaml:
 
 ```yaml
 spring:
@@ -89,11 +106,11 @@ spring:
 
 The MCP-Server can be reached at the endpoint `http://<<your-url>>/matchbox(v3)/mcp/message`
 
-### Setting up matchbox for Claude Desktop
+### Setting up Matchbox for Claude Desktop
 
-For Claude Pro/Max users, follow the instructions for setting up remote MCP-Servers by [Anthropic](https://support.anthropic.com/en/articles/11175166-about-custom-integrations-using-remote-mcp).
+For Claude Desktop users, follow the instructions for setting up remote MCP-Servers by [Anthropic](https://claude.com/docs/connectors/custom/remote-mcp#adding-custom-connectors).
 
-For Free users connecting to remote servers is currently not officially supported by Anthropic. However, there are possible workarounds, such as using the [MCPHub Gateway project](https://github.com/lightconetech/mcp-gateway).
+Free users can still use the above guide, but are limited to one MCP server at this time. 
 
 Example Claude Desktop:
 ![Claude Desktop MCP example](assets/claude_desktop_mcp_example.png)
@@ -112,13 +129,13 @@ Example Claude Desktop:
     }
 ```
 
-### Setting up matchbox for VS Code GitHub Copilot
+### Setting up Matchbox for VS Code GitHub Copilot
 
 First, make sure the `chat.mcp.enabled` setting in VS Code is enabled.
 
 To access the validation tool in the GitHub Copilot integration for VS Code find the settings.json file located here: `%APPDATA%\Roaming\Code\User`.
 
-Add matchbox as MCP-Server as such:
+Add Matchbox as MCP-Server as such:
 
 ```json
 {

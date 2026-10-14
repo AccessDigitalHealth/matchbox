@@ -76,8 +76,6 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
 
   private final FilesystemPackageCacheManagerLocks.LockParameters lockParameters;
 
-  private final static String VER_XVER_PROVIDED = "0.0.13";
-
   // When running in testing mode, some packages are provided from the test case repository rather than by the normal means
   // the PackageProvider is responsible for this. if no package provider is defined, or it declines to handle the package, 
   // then the normal means will be used
@@ -328,50 +326,58 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
     if (version.startsWith("file:")) {
       throw new FHIRException("Cannot add package " + id + " to the package cache - the version '" + version + "' is illegal in this context");
     }
-    if (!(Utilities.existsInList(version, "current", "dev") || VersionUtilities.isSemVer(version))) {
+    if (!(Utilities.existsInList(version, "current", "dev") || VersionUtilities.isSemVer(version, true))) {
       throw new FHIRException("Cannot add package " + id + " to the package cache - the version '" + version + "' is illegal - must be a valid SemVer, or 'current' or 'dev'");
     }
   }
 
-  protected InputStreamWithSrc loadFromPackageServer(String id, String version) {
+  protected InputStreamWithSrc loadFromPackageServer(String id, String version) throws FileNotFoundException {
 
-  		// matchbox-engine PATCH, we do not want to load from a package server for hl7.fhir.xver-extension :
-  		if (CommonPackages.ID_XVER.equals(id)) {
-  			ourLog.info("loading " +id+ " from classpath");
-		    version = VER_XVER_PROVIDED;
-	  		InputStream stream = getClass().getResourceAsStream("/"+id+"#"+version+".tgz");
-  			if (stream==null) {
-	  			ourLog.error("Unable to find/resolve/read from classpath (we dont' want go to the package server) for :" + id+"#"+version+".tgz");
-		  		throw new FHIRException("Unable to find/resolve/read from classpath (we dont' want go to the package server) for :" + id+"#"+version+".tgz");
-			  }
-			  return new InputStreamWithSrc(stream, "http://fhir.org/packages/hl7.fhir.xver-extensions", version);
-  		}
+    // matchbox-engine PATCH, we do not want to load from a package server for hl7.fhir.xver-extension :
+    if (CommonPackages.ID_XVER.equals(id) || id.equals("hl7.fhir.uv.xver")) {
+      ourLog.info("loading " +id+ " from classpath");
 
-	  	if (id.startsWith("hl7.fhir") && id.endsWith("core")) {
-  			ourLog.info("loading from classpath "+id);
-	  		InputStream stream = getClass().getResourceAsStream("/"+id+".tgz");
-		  	if (stream==null) {
-			  	ourLog.error("Unable to find/resolve/read from classpath (we dont' want go to the package server) for :" + id+"#"+version+".tgz");
-				  throw new FHIRException("Unable to find/resolve/read from classpath (we dont' want go to the package server) for :" + id+"#"+version+".tgz");
-  			}
-        return new InputStreamWithSrc(stream, "https://hl7.org/fhir/R5/hl7.fhir.r5.core.tgz", version);
-	  	}
-
-      String packageName = id + "#" + version;
-      switch (packageName) {
-        case MatchboxEngine.PACKAGE_R4_TERMINOLOGY:
-        case MatchboxEngine.PACKAGE_R5_TERMINOLOGY:
-        case MatchboxEngine.PACKAGE_R4_UV_EXTENSIONS:
-        case MatchboxEngine.PACKAGE_R5_UV_EXTENSIONS:
-          ourLog.info("loading from classpath "+id);
-          InputStream stream = getClass().getResourceAsStream("/"+packageName+".tgz");
-          if (stream==null) {
-            ourLog.error("Unable to find/resolve/read from classpath (we dont' want go to the package server) for :" + id+"#"+version+".tgz");
-            throw new FHIRException("Unable to find/resolve/read from classpath (we dont' want go to the package server) for :" + id+"#"+version+".tgz");
-          }
-          return new InputStreamWithSrc(stream, "https://hl7.org/fhir/R5/hl7.fhir.r5.core.tgz", version);
+      InputStream stream = null;
+      if ("0.1.0".equals(version)) {
+        stream = getClass().getResourceAsStream("/hl7.fhir.uv.xver#0.1.0.tgz");
       }
-  	
+      if (stream==null) {
+        ourLog.error("Unable to find/resolve/read from classpath (we don't want go to the package server) for :" + id+"#"+version+".tgz");
+        throw new FHIRException("Unable to find/resolve/read from classpath (we don't want go to the package server) for :" + id+"#"+version+".tgz");
+      }
+      return new InputStreamWithSrc(stream, "http://fhir.org/", version);
+    }
+
+    // matchbox-engine PATCH, the FHIR core packages are provided in the classpath.
+    // Note: this must not use a startsWith/endsWith test on the id, it would also capture the national core
+    // IGs (hl7.fhir.fr.core, hl7.fhir.us.core, hl7.fhir.be.core, ...), which are ordinary packages.
+    if (VersionUtilities.isCorePackage(id)) {
+      ourLog.info("loading from classpath "+id);
+      InputStream stream = getClass().getResourceAsStream("/"+id+".tgz");
+      if (stream==null) {
+        ourLog.error("Unable to find/resolve/read from classpath (we don't want go to the package server) for :" + id+"#"+version+".tgz");
+        throw new FHIRException("Unable to find/resolve/read from classpath (we don't want go to the package server) for :" + id+"#"+version+".tgz");
+      }
+      return new InputStreamWithSrc(stream, "https://hl7.org/", version);
+    }
+
+    String packageName = id + "#" + version;
+    switch (packageName) {
+      case MatchboxEngine.PACKAGE_R4_TERMINOLOGY:
+      case MatchboxEngine.PACKAGE_R5_TERMINOLOGY:
+      case MatchboxEngine.PACKAGE_R4_UV_EXTENSIONS:
+      case MatchboxEngine.PACKAGE_R5_UV_EXTENSIONS:
+      case MatchboxEngine.PACKAGE_UV_XVER:
+      case MatchboxEngine.PACKAGE_UV_XVER54:
+        ourLog.info("loading from classpath "+id);
+        InputStream stream = getClass().getResourceAsStream("/"+packageName+".tgz");
+        if (stream==null) {
+          ourLog.error("Unable to find/resolve/read from classpath (we don't want go to the package server) for :" + id+"#"+version+".tgz");
+          throw new FHIRException("Unable to find/resolve/read from classpath (we don't want go to the package server) for :" + id+"#"+version+".tgz");
+        }
+        return new InputStreamWithSrc(stream, "https://hl7.org/", version);
+    }
+
     InputStreamWithSrc retVal = super.loadFromPackageServer(id, version);
     if (retVal != null) {
       return retVal;
@@ -386,8 +392,8 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
     return fetchTheOldWay(id, version);
   }
 
-  public String getLatestVersion(String id, boolean milestonesOnly) throws IOException {
-    id = stripAlias(id);
+  public String getLatestVersion(String statedId, boolean milestonesOnly) throws IOException {
+    String id = stripAlias(statedId);
     for (PackageServer nextPackageServer : getPackageServers()) {
       // special case:
       if (!(Utilities.existsInList(id, CommonPackages.ID_PUBPACK, "hl7.terminology.r5") && PackageServer.SECONDARY_SERVER.equals(nextPackageServer.getUrl()))) {
@@ -413,8 +419,8 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
     throw new FHIRException("Unable to find the last version for package " + id + ": no local copy, and no network access");
   }
 
-  public String getLatestVersion(String id, String versionFilter) throws IOException {
-    id = stripAlias(id);
+  public String getLatestVersion(String statedId, String versionFilter) throws IOException {
+    String id = stripAlias(statedId);
     for (PackageServer nextPackageServer : getPackageServers()) {
       // special case:
       if (!(Utilities.existsInList(id, CommonPackages.ID_PUBPACK, "hl7.terminology.r5") && PackageServer.SECONDARY_SERVER.equals(nextPackageServer.getUrl()))) {
@@ -440,8 +446,8 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
     throw new FHIRException("Unable to find the last version for package " + id + ": no local copy, and no network access");
   }
 
-  public String getLatestVersionFromCache(String id) throws IOException {
-    id = stripAlias(id);
+  public String getLatestVersionFromCache(String statedId) throws IOException {
+    String id = stripAlias(statedId);
     for (String f : Utilities.reverseSorted(cacheFolder.list())) {
       File cf = ManagedFileAccess.file(Utilities.path(cacheFolder, f));
       if (cf.isDirectory()) {
@@ -455,8 +461,8 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
     return null;
   }
 
-  public String getLatestVersionFromCache(String id, String versionFilter) throws IOException {
-    id = stripAlias(id);
+  public String getLatestVersionFromCache(String statedId, String versionFilter) throws IOException {
+    String id = stripAlias(statedId);
     for (String f : Utilities.reverseSorted(cacheFolder.list())) {
       File cf = ManagedFileAccess.file(Utilities.path(cacheFolder, f));
       if (cf.isDirectory()) {
@@ -508,8 +514,8 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
    * @param version The literal version of the package to remove. Values such as 'current' and 'dev' are not allowed.
    * @throws IOException If the package cannot be removed
    */
-  public void removePackage(String id, String version) throws IOException {
-    String sid = stripAlias(id);
+  public void removePackage(String statedId, String version) throws IOException {
+    String sid = stripAlias(statedId);
     locks.getPackageLock(sid + "#" + version).doWriteWithLock(() -> {
 
       String f = Utilities.path(cacheFolder, sid + "#" + version);
@@ -534,8 +540,9 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
    * @throws IOException If the package cannot be loaded
    */
   @Override
-  public NpmPackage loadPackageFromCacheOnly(String id, @Nullable String version) throws IOException {
-    id = stripAlias(id);
+  public NpmPackage loadPackageFromCacheOnly(String statedId, @Nullable String version) throws IOException {
+    String id = stripAlias(statedId);
+    String fid = encodeIdForFilesystem(id);
 
     if (!Utilities.noString(version) && version.startsWith("file:")) {
       return loadPackageFromFile(id, version.substring(5));
@@ -550,7 +557,7 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
       }
     }
 
-    String foundPackageFolder = findPackageFolder(id, version);
+    String foundPackageFolder = findPackageFolder(fid, version);
     if (foundPackageFolder != null) {
       NpmPackage foundPackage = locks.getPackageLock(foundPackageFolder).doReadWithLock(() -> {
         String path = Utilities.path(cacheFolder, foundPackageFolder);
@@ -606,8 +613,10 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
           return currentPackageFolder;
         }
         if (version != null && !Utilities.existsInList(version, "current", "dev") && (VersionUtilities.isSemVerWithWildcards(version) || Utilities.charCount(version, '.') < 2) && currentPackageFolder.contains("#")) {
+          @SuppressWarnings("checkstyle:stringImplicitPatternUsage")
+          //single literal character split
           String[] parts = currentPackageFolder.split("#");
-          if (parts[0].equals(id) && VersionUtilities.isSemVer(parts[1]) && VersionUtilities.versionMatches((foundVersion != null ? foundVersion : version), parts[1])) {
+          if (parts[0].equals(id) && VersionUtilities.isSemVer(parts[1], true) && VersionUtilities.versionMatches((foundVersion != null ? foundVersion : version), parts[1])) {
             foundVersion = parts[1];
             foundPackageFolder = currentPackageFolder;
           }
@@ -621,49 +630,32 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
    * Add an already fetched package to the cache
    */
   @Override
-  public NpmPackage addPackageToCache(String id, final String version, final InputStream packageTgzInputStream, final String sourceDesc) throws IOException {
-    String sid = stripAlias(id);
-
-    // matchbox-engine PATCH, we do not want to load from a package server for hl7.fhir.xver-extension :
-  	if (CommonPackages.ID_XVER.equals(sid)) {
-      NpmPackage npm = NpmPackage.fromPackage(packageTgzInputStream, sourceDesc, true);
-      return npm;
-  	}
-
-    if ("hl7.cda.uv.core".equals(sid)) {
-      NpmPackage npm = NpmPackage.fromPackage(packageTgzInputStream, sourceDesc, true);
-      return npm;
-  	}
-    checkValidVersionString(version, sid);
-    return locks.getPackageLock(sid + "#" + version).doWriteWithLock(() -> {
+  public NpmPackage addPackageToCache(String statedId, final String version, final InputStream packageTgzInputStream, final String sourceDesc) throws IOException {
+    String actualId = stripAlias(statedId);
+    String fileSystemId = encodeIdForFilesystem(actualId);
+    checkValidVersionString(version, actualId);
+    return locks.getPackageLock(fileSystemId + "#" + version).doWriteWithLock(() -> {
 
       String tempDir = Utilities.generateUniqueRandomUUIDPath(cacheFolder.getAbsolutePath());
 
       NpmPackage extractedNpm = NpmPackage.extractFromTgz(packageTgzInputStream, sourceDesc, tempDir, minimalMemory);
 
       log.info("");
-      log.info("Installing " + sid + "#" + version);
+      log.info("Installing " + stripAlias(actualId) + "#" + version);
 
-      if ((extractedNpm.name() != null && sid != null && !sid.equalsIgnoreCase(extractedNpm.name()) && !sid.equalsIgnoreCase(extractedNpm.name()+"."+VersionUtilities.getNameForVersion(extractedNpm.fhirVersion())))) {
-        if (!suppressErrors && (!sid.equals("hl7.fhir.r5.core") && !sid.equals("hl7.fhir.us.immds"))) {// temporary work around
-          throw new IOException("Attempt to import a mis-identified package. Expected " + sid + ", got " + extractedNpm.name());
-        }
+      if (!suppressErrors && extractedNpm.name() != null && actualId != null &&
+          !fileSystemId.equalsIgnoreCase(encodeIdForFilesystem(extractedNpm.name())) &&
+          !fileSystemId.equalsIgnoreCase(encodeIdForFilesystem(extractedNpm.name())+"."+VersionUtilities.getNameForVersion(extractedNpm.fhirVersion()))) {
+          throw new IOException("Attempt to import a mis-identified package. Expected " + actualId + ", got " + extractedNpm.name());
       }
 
       NpmPackage npmPackage;
-      String packageRoot = Utilities.path(cacheFolder, sid + "#" + version);
+      String packageRoot = Utilities.path(cacheFolder, fileSystemId + "#" + version);
       try {
-        if (!sid.equals(extractedNpm.getNpm().asString("name")) || !version.equals(extractedNpm.getNpm().asString("version"))) {
-          if (!sid.equals(extractedNpm.getNpm().asString("name"))) {
-            extractedNpm.getNpm().add("original-name", extractedNpm.getNpm().asString("name"));
-            extractedNpm.getNpm().remove("name");
-            extractedNpm.getNpm().add("name", sid);
-          }
-          if (!version.equals(extractedNpm.getNpm().asString("version"))) {
-            extractedNpm.getNpm().add("original-version", extractedNpm.getNpm().asString("version"));
-            extractedNpm.getNpm().remove("version");
-            extractedNpm.getNpm().add("version", version);
-          }
+        if (!version.equals(extractedNpm.getNpm().asString("version"))) {
+          extractedNpm.getNpm().add("original-version", extractedNpm.getNpm().asString("version"));
+          extractedNpm.getNpm().remove("version");
+          extractedNpm.getNpm().add("version", version);
           FileUtilities.stringToFile(JsonParser.compose(extractedNpm.getNpm(), true), Utilities.path(tempDir, "package", "package.json"));
         }
 
@@ -688,6 +680,7 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
         }
         npmPackage = loadPackageInfo(packageRoot);
 
+        log.info(" loaded @ "+packageRoot);
       } catch (Exception e) {
         try {
           // don't leave a half extracted package behind
@@ -705,8 +698,8 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
   }
 
   @Override
-  public String getPackageUrl(String packageId) throws IOException {
-    packageId = stripAlias(packageId);
+  public String getPackageUrl(String statedId) throws IOException {
+    String packageId = stripAlias(statedId);
     String result = super.getPackageUrl(packageId);
     if (result == null) {
       result = ciBuildClient.getPackageUrl(packageId);
@@ -738,79 +731,88 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
   }
 
   @Override
-  public NpmPackage loadPackage(String id, String version) throws FHIRException, IOException {
-    id = stripAlias(id);
-    //ok, try to resolve locally
-
-    // MATCHBOX PATCH
-		if (CommonPackages.ID_XVER.equals(id)) {
-			InputStreamWithSrc packageTgzInputStream = this.loadFromPackageServer(id, version);
-    	  	NpmPackage npm = NpmPackage.fromPackage(packageTgzInputStream.stream);
-			// org.hl7.fhir.exceptions.FHIRException: Unknown FHIRVersion code '0.0.13'
-			// https://github.com/ahdis/matchbox/issues/135 
-			npm.getNpm().set("version", "4.0");
-		    return npm;
-  		}
-
-		if ("hl7.fhir.r5.core".equals(id)) {
-			InputStreamWithSrc packageTgzInputStream = this.loadFromPackageServer(id, version);
-    	  	NpmPackage npm = NpmPackage.fromPackage(packageTgzInputStream.stream);
-		    return npm;
-  		}
-
-    if (!Utilities.noString(version) && version.startsWith("file:")) {
-      return loadPackageFromFile(id, version.substring(5));
-    }
-
-    if (version == null && id.contains("#")) {
-      version = id.substring(id.indexOf("#") + 1);
-      id = id.substring(0, id.indexOf("#"));
+  public NpmPackage loadPackage(String statedId, String version) throws FHIRException, IOException {
+    if (version == null && statedId.contains("#")) {
+      version = statedId.substring(statedId.indexOf("#") + 1);
+      statedId = statedId.substring(0, statedId.indexOf("#"));
     }
 
     if (version == null) {
       try {
-        version = getLatestVersion(id, false);
+        version = getLatestVersion(statedId, false);
       } catch (Exception e) {
-        version = null;
+        // version = null; we just don't know the version
       }
     }
-    NpmPackage p = loadPackageFromCacheOnly(id, version);
+
+    String actualVersion = checkOKToLoadPackage(statedId, version);
+
+    String id = stripAlias(statedId);
+    //ok, try to resolve locally
+    if (!Utilities.noString(version) && actualVersion.startsWith("file:")) {
+      return loadPackageFromFile(id, actualVersion.substring(5));
+    }
+
+    NpmPackage p = loadPackageFromCacheOnly(id, actualVersion);
     if (p != null) {
-      if ("current".equals(version)) {
+      if ("current".equals(actualVersion)) {
         p = nullIfNotCurrentPackage(id, p);
       }
       if (p != null)
         return p;
     }
 
-    if ("dev".equals(version)) {
+    if ("dev".equals(actualVersion)) {
       p = loadPackageFromCacheOnly(id, "current");
       p = nullIfNotCurrentPackage(id, p);
       if (p != null)
         return p;
-      version = "current";
+      actualVersion = "current";
     }
 
-    log.info("Installing " + id + "#" + (version == null ? "?" : version) + " to the package cache");
+    log.info("Installing " + id + "#" + (actualVersion == null ? "?" : actualVersion) + " to the package cache");
     log.info("  Fetching:");
 
     // nup, don't have it locally (or it's expired)
     FilesystemPackageCacheManager.InputStreamWithSrc source;
-    // matchbox-engine
-    if (packageProvider != null && packageProvider.handlesPackage(id, version)) {
-      source = packageProvider.provide(id, version);
-    } else if (Utilities.isAbsoluteUrl(version)) {
-      source = fetchSourceFromUrlSpecific(version);
-    } else if ("current".equals(version) || (version != null && version.startsWith("current$"))) {
+    if (false && packageProvider != null && packageProvider.handlesPackage(id, actualVersion)) {
+      source = packageProvider.provide(id, actualVersion);
+    } else if (Utilities.isAbsoluteUrl(actualVersion)) {
+      source = fetchSourceFromUrlSpecific(actualVersion);
+    } else if ("current".equals(actualVersion) || (actualVersion != null && actualVersion.startsWith("current$"))) {
       // special case - fetch from ci-build server
-      source = ciBuildClient.loadFromCIBuild(id, version.startsWith("current$") ? version.substring(8) : null);
+      source = ciBuildClient.loadFromCIBuild(id, actualVersion.startsWith("current$") ? version.substring(8) : null);
     } else {
-      source = loadFromPackageServer(id, version);
+      source = loadFromPackageServer(id, actualVersion);
     }
     if (source == null) {
-      throw new FHIRException("Unable to find package " + id + "#" + version);
+      throw new FHIRException("Unable to find package " + id + "#" + actualVersion);
     }
     return addPackageToCache(id, source.version, source.stream, source.url);
+  }
+
+  /**
+   * This is called before loading any package. It can
+   *   * raise an exception, in which case the program terminates
+   *   * return null, in which case the package is not loaded
+   *   * return a version, in which case the specified version is loaded.
+   *
+   * Normal behaviour is simply to return the version passed in
+   *
+   * @param id - proposed package id
+   * @param version - proposed package version
+   * @return version to load. Or null, to ignore the package. Or throw an exception
+   */
+  private String checkOKToLoadPackage(String id, String version) {
+    if ("fhir.base.template".equals(id)) {
+      log.warn("This content depends on fhir.base.template which is no longer considered secure to use");
+      log.warn("See Security notification at https://www.fhir.org/guides/security-notices/2026-03-npm-dependencies.html");
+    }
+    if (loadControl != null) {
+      return loadControl.checkOKToLoadPackage(id, version);
+    } else {
+      return version;
+    }
   }
 
   private InputStreamWithSrc fetchSourceFromUrlSpecific(String url) {
@@ -883,41 +885,40 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
   }
 
   // ----- the old way, from before package server, while everything gets onto the package server
-  private InputStreamWithSrc fetchTheOldWay(String id, String v) {
+  private InputStreamWithSrc fetchTheOldWay(String id, String version) {
     String url = getUrlForPackage(id);
     if (url == null) {
       try {
         url = ciBuildClient.getPackageUrl(id);
       } catch (Exception ignored) {
-
       }
     }
     if (url == null) {
-      throw new FHIRException("Unable to resolve package id " + id + "#" + v);
+      throw new FHIRException("Unable to resolve package id " + id + "#" + version);
     }
     if (url.contains("/ImplementationGuide/")) {
       url = url.substring(0, url.indexOf("/ImplementationGuide/"));
     }
-    String pu = Utilities.pathURL(url, "package-list.json");
+    String packageListUrl = ManagedWebAccess.makeSecureRef(Utilities.pathURL(url, "package-list.json"));
 
-    PackageList pl;
+    PackageList packageList;
     try {
-      pl = PackageList.fromUrl(pu);
+      packageList = PackageList.fromUrl(packageListUrl);
     } catch (Exception e) {
-      String pv = Utilities.pathURL(url, v, "package.tgz");
+      String packageTgzUrl = ManagedWebAccess.makeSecureRef(Utilities.pathURL(url, version, "package.tgz"));
+
       try {
-        return new InputStreamWithSrc(fetchFromUrlSpecific(pv, false), pv, v);
+        return new InputStreamWithSrc(fetchFromUrlSpecific(packageTgzUrl, false), packageTgzUrl, version);
       } catch (Exception e1) {
-        throw new FHIRException("Error fetching package directly (" + pv + "), or fetching package list for " + id + " from " + pu + ": " + e1.getMessage(), e1);
+        throw new FHIRException("Error fetching package directly (" + packageTgzUrl + "), or fetching package list for " + id + " from " + packageListUrl + ": " + e1.getMessage(), e1);
       }
     }
-    if (!id.equals(pl.pid()))
-      throw new FHIRException("Package ids do not match in " + pu + ": " + id + " vs " + pl.pid());
-    for (PackageListEntry vo : pl.versions()) {
-      if (v.equals(vo.version())) {
-
-        String u = Utilities.pathURL(vo.path(), "package.tgz");
-        return new InputStreamWithSrc(fetchFromUrlSpecific(u, true), u, v);
+    if (!id.equals(packageList.pid()))
+      throw new FHIRException("Package ids do not match in " + packageListUrl + ": " + id + " vs " + packageList.pid());
+    for (PackageListEntry packageEntry : packageList.versions()) {
+      if (version.equals(packageEntry.version())) {
+        String packageTgzUrl = ManagedWebAccess.makeSecureRef(Utilities.pathURL(packageEntry.path(), "package.tgz"));
+        return new InputStreamWithSrc(fetchFromUrlSpecific(packageTgzUrl, true), packageTgzUrl, version);
       }
     }
 
@@ -939,7 +940,8 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
     if (url == null) {
       throw new FHIRException("Unable to resolve package id " + id);
     }
-    PackageList pl = PackageList.fromUrl(Utilities.pathURL(url, "package-list.json"));
+    String secureUrl = ManagedWebAccess.makeSecureRef(url);
+    PackageList pl = PackageList.fromUrl(Utilities.pathURL(secureUrl, "package-list.json"));
     if (!id.equals(pl.pid()))
       throw new FHIRException("Package ids do not match in " + pl.source() + ": " + id + " vs " + pl.pid());
     for (PackageListEntry vo : pl.versions()) {
@@ -1000,8 +1002,8 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
 
 
 
-  public boolean packageExists(String id, String ver) throws IOException {
-    id = stripAlias(id);
+  public boolean packageExists(String statedId, String ver) throws IOException {
+    String id = stripAlias(statedId);
     if (packageInstalled(id, ver)) {
       return true;
     }
@@ -1013,8 +1015,8 @@ public class FilesystemPackageCacheManager extends BasePackageCacheManager imple
     return false;
   }
 
-  public boolean packageInstalled(String id, String version) {
-    id = stripAlias(id);
+  public boolean packageInstalled(String statedId, String version) {
+    String id = stripAlias(statedId);
     for (NpmPackage p : temporaryPackages) {
       if (p.name().equals(id) && ("current".equals(version) || "dev".equals(version) || p.version().equals(version))) {
         return true;

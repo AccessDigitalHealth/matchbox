@@ -5,8 +5,14 @@
     <mat-card-title>The resource</mat-card-title>
   </mat-card-header>
   <mat-card-content>
-    <app-upload (addFiles)="setResource($event)"></app-upload>
-    <pre><code [highlight]="getResource()" lineNumbers language="json"></code></pre>
+    <app-upload (addFiles)="setResource($event)" #resourceUploader></app-upload>
+    <p class="selection-feedback" [class.valid]="resource" [class.invalid]="!resource">
+      Resource selected: @if (resource) {
+      <span class="url">{{ resource.resourceType }}</span>
+    } @else {
+      <em>None</em>
+    }
+    </p>
   </mat-card-content>
 </mat-card>
 
@@ -16,8 +22,8 @@
     <mat-card-subtitle>Choose a StructureMap to use for the transformation</mat-card-subtitle>
   </mat-card-header>
   <mat-card-content>
-    <mat-tab-group>
-      <mat-tab label="By reference">
+    <mat-tab-group (selectedTabChange)="clearMapSelection()">
+      <mat-tab label="By reference" id="tab-map-reference">
         <div class="tab-content flex">
           <mat-form-field appearance="fill">
             <mat-label>The map to use:</mat-label>
@@ -25,23 +31,31 @@
               <mat-option>
                 <ngx-mat-select-search [formControl]="structureMapFilterControl"></ngx-mat-select-search>
               </mat-option>
-              <mat-option
-                *ngFor="let structureMap of filteredStructureMaps | async"
-                value="{{ structureMap.url }}"
-              >{{ structureMap.title ? structureMap.title : structureMap.name }}
-              </mat-option
-              >
+              @for (structureMap of filteredStructureMaps | async; track structureMap) {
+                <mat-option
+                  value="{{ structureMap.url }}"
+                >{{ structureMap.title ? structureMap.title : structureMap.name }}
+                </mat-option
+                >
+              }
             </mat-select>
           </mat-form-field>
         </div>
       </mat-tab>
-      <mat-tab label="By uploading">
+      <mat-tab label="By uploading" id="tab-map-upload">
         <div class="tab-content">
           Provide a StructureMap to use for the transformation (JSON or XML):
-          <app-upload (addFiles)="setMapContent($event)"></app-upload>
+          <app-upload (addFiles)="setMapContent($event)" #mapUploader></app-upload>
         </div>
       </mat-tab>
     </mat-tab-group>
+    <p class="selection-feedback" [class.valid]="this.map" [class.invalid]="!this.map">
+      Map selected: @if (this.map) {
+      <span class="url">{{ this.map.canonical }}</span>
+    } @else {
+      <em>None</em>
+    }
+    </p>
   </mat-card-content>
 </mat-card>
 
@@ -51,31 +65,36 @@
   </mat-card-header>
   <mat-card-content>
     Provide a StructureDefinition or Bundle of StructureDefinitions resource that are imported by the map (JSON or XML):
-    <app-upload (addFiles)="setModelContent($event)"></app-upload>
+    <app-upload (addFiles)="setModelContent($event)" #modelUploader></app-upload>
   </mat-card-content>
 </mat-card>
 
 <mat-card class="card-maps">
   <mat-card-content>
-    <button mat-stroked-button (click)="transform()">
+    <button class="btn-main" mat-stroked-button (click)="transform()" [disabled]="!this.resource || !this.map">
       <mat-icon>transform</mat-icon>
       Transform
     </button>
   </mat-card-content>
 </mat-card>
 
-<mat-card class="card-maps" *ngIf="transformed || operationOutcomeTransformed">
+<mat-card class="card-maps">
   <mat-card-header>
     <mat-card-title>Transformed</mat-card-title>
   </mat-card-header>
   <mat-card-content>
-    <mat-error *ngIf="operationOutcomeTransformed">
-      <ul>
-        <li *ngFor="let issue of operationOutcomeTransformed.issue">
-          {{ issue.diagnostics }}
-        </li>
-      </ul>
-    </mat-error>
-    <pre><code [highlight]="getMapped()" lineNumbers language="json"></code></pre>
+    @if (operationOutcomeTransformed) {
+      <mat-error>
+        <ul>
+          @for (issue of operationOutcomeTransformed.issue; track issue) {
+            <li>
+              {{ issue.diagnostics }}
+            </li>
+          }
+        </ul>
+      </mat-error>
+    }
+    <div id="editor"></div>
   </mat-card-content>
 </mat-card>
+

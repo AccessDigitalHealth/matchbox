@@ -6,7 +6,7 @@
     <parent>
         <artifactId>matchbox</artifactId>
         <groupId>health.matchbox</groupId>
-        <version>4.0.16</version>
+        <version>4.1.21</version>
     </parent>
 
     <artifactId>matchbox-engine</artifactId>
@@ -15,6 +15,10 @@
         capture health data into HL7® FHIR®
     </description>
     <packaging>jar</packaging>
+
+    <properties>
+        <maven.compiler.release>17</maven.compiler.release>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -146,9 +150,34 @@
     <build>
         <finalName>matchbox-engine</finalName>
         <plugins>
+            <!-- Tell Maven which Java source version you want to use -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>${maven.compiler.release}</release>
+                    <encoding>${project.build.sourceEncoding}</encoding>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok_version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <!-- This is to run the unit tests -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- The heap must stay below the machine's physical memory: all test classes share one forked JVM
+                         and each loads its own engines and IG packages, so with MaxRAMPercentage=100 the JVM keeps
+                         expanding instead of collecting, until the OOM killer takes it down (see matchbox-server). -->
+                    <argLine>-XX:MaxRAMPercentage=70.0 -XX:MinRAMPercentage=40.0</argLine>
+                    <reuseForks>true</reuseForks>
+                    <forkCount>1</forkCount>
+                </configuration>
                 <executions>
                     <execution>
                         <id>default-test</id>
@@ -173,6 +202,9 @@
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
                     <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                    <argLine>-Xmx20g</argLine>
+                    <forkCount>1</forkCount>
+                    <reuseForks>true</reuseForks>
                 </configuration>
                 <executions>
                     <execution>
